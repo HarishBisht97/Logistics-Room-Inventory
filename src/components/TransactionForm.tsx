@@ -1,30 +1,34 @@
 import { useRef, useState, type FormEvent } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
 import { LoaderCircle } from 'lucide-react';
-import { db } from '../db/database';
-import { registerTransaction } from '../db/transactionService';
-import type { TransactionAction } from '../types';
-import { formatDateTime } from '../utils/dateUtils';
+import { addTransaction } from '../services/transactionService';
+import { useItemLookup } from '../services/useLogisticsData';
+import { createDocumentId } from '../services/firestoreRecords';
+import type { ItemRecord, TransactionAction } from '../types';
+import { formatDate, formatDateKey, formatTime, isDateKey, todayKey } from '../utils/dateUtils';
 import { hasErrors, validateTransaction, type FieldErrors } from '../utils/validation';
+import { DateNavigator } from './DateNavigator';
 import { greenButton, orangeButton, secondaryButton, textInput, textInputError } from './styles';
 
 interface TransactionFormProps {
   initialBarcode: string;
   initialName?: string;
   initialAction?: TransactionAction | '';
+  initialDate: string;
   barcodeLocked?: boolean;
   onCancel: () => void;
-  onSubmitted: (result: { barcode: string; action: TransactionAction }) => void;
+  onSubmitted: (result: { barcode: string; action: TransactionAction; transactionDate: string }) => void;
 }
 
 type Lookup =
-  | { state: 'idle' }
-  | { state: 'done'; item: import('../types').ItemRecord | null };
+  | { state: 'idle'; item: null }
+  | { state: 'done'; item: ItemRecord | null; message?: string }
+  | { state: 'error'; item: null; message?: string };
 
 export function TransactionForm({
   initialBarcode,
   initialName = '',
   initialAction = '',
+  initialDate,
   barcodeLocked = false,
   onCancel,
   onSubmitted,
@@ -34,10 +38,13 @@ export function TransactionForm({
   const [name, setName] = useState(initialName);
   const [reason, setReason] = useState('');
   const [action, setAction] = useState<TransactionAction | ''>(initialAction);
+  const [transactionDate, setTransactionDate] = useState(isDateKey(initialDate) ? initialDate : todayKey());
   const [errors, setErrors] = useState<FieldErrors>({});
   const [formError, setFormError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const inFlight = useRef(false);
+  const attempt = useRef<{ key: string; fingerprint: string } | null>(null);
+  const lookup = useItemLookup(barcode) as Lookup;
 
   function clearFieldError(field: keyof FieldErrors) {
     setErrors((current) => {
@@ -48,27 +55,32 @@ export function TransactionForm({
     });
   }
 
-  const lookup = useLiveQuery<Lookup, Lookup>(async () => {
-    const key = barcode.trim();
-    if (!key) return { state: 'idle' };
-    const item = await db.items.get(key);
-    return { state: 'done', item: item ?? null };
-  }, [barcode], { state: 'idle' });
-
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
     if (inFlight.current) return;
 
-    const nextErrors = validateTransaction({ barcode, name, reason, action });
+    const nextErrors = validateTransaction({ barcode, name, reason, action, transactionDate });
     setErrors(nextErrors);
     setFormError('');
     if (hasErrors(nextErrors) || (action !== 'TAKING' && action !== 'RETURNING')) return;
 
+    const fingerprint = `${barcode.trim()}|${name.trim()}|${reason.trim()}|${action}|${transactionDate}`;
+    if (!attempt.current || attempt.current.fingerprint !== fingerprint) {
+      attempt.current = { key: createDocumentId(), fingerprint };
+    }
+
     inFlight.current = true;
     setSubmitting(true);
     try {
-      await registerTransaction({ barcode, name, reason, action });
-      onSubmitted({ barcode: barcode.trim(), action });
+      await addTransaction({
+        barcode,
+        name,
+        reason,
+        action,
+        transactionDate,
+        idempotencyKey: attempt.current.key,
+      });
+      onSubmitted({ barcode: barcode.trim(), action, transactionDate });
     } catch (error) {
       inFlight.current = false;
       setSubmitting(false);
@@ -180,6 +192,25 @@ export function TransactionForm({
         {errors.action ? <p id="action-error" className="mt-1.5 text-sm text-red-600">{errors.action}</p> : null}
       </div>
 
+      <div>
+        <DateNavigator
+          embedded
+          required
+          label="Transaction date"
+          date={transactionDate}
+          onChange={(next) => {
+            setTransactionDate(next);
+            clearFieldError('transactionDate');
+          }}
+        />
+        {errors.transactionDate ? <p className="mt-1.5 text-sm text-red-600">{errors.transactionDate}</p> : null}
+        {transactionDate !== todayKey() ? (
+          <p className="mt-2 text-sm leading-6 text-slate-500">
+            This record is saved on {formatDateKey(transactionDate)}. Current item status still follows the latest actual state, not this calendar date.
+          </p>
+        ) : null}
+      </div>
+
       {formError ? (
         <p className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">{formError}</p>
       ) : null}
@@ -206,6 +237,9 @@ function ItemStatus({
   action: TransactionAction | '';
   prefilledName: string;
 }) {
+  if (lookup.state === 'error') {
+    return <p className="mt-2 rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">{lookup.message}</p>;
+  }
   if (lookup.state !== 'done') return null;
   const item = lookup.item;
 
@@ -220,7 +254,11 @@ function ItemStatus({
   }
 
   if (item.status === 'TAKEN') {
-    const when = item.takenAt ? formatDateTime(item.takenAt) : 'an earlier time';
+    const when = item.lastTransactionDate
+      ? `${formatDateKey(item.lastTransactionDate)}${item.takenAt ? `, ${formatTime(item.takenAt)}` : ''}`
+      : item.takenAt
+        ? `${formatDate(item.takenAt)}, ${formatTime(item.takenAt)}`
+        : 'an earlier time';
     const conflict = action === 'TAKING';
     return (
       <div className={`mt-2 rounded-xl px-3 py-2 text-sm ${conflict ? 'bg-red-50 text-red-700' : 'bg-orange-50 text-orange-800'}`}>

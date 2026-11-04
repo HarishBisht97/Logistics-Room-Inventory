@@ -1,7 +1,9 @@
 import { db } from './database';
 import type { BackupFile, ItemRecord, TransactionAction, TransactionRecord } from '../types';
 import { downloadBlob } from '../utils/download';
+import { formatTime, isDateKey, toDateKey } from '../utils/dateUtils';
 
+const BACKUP_NAME = 'Logistics_Inventory_Backup.json';
 const ACTIONS = new Set<TransactionAction>(['TAKING', 'RETURNING']);
 
 export async function getDataCounts(): Promise<{ transactions: number; items: number }> {
@@ -14,22 +16,25 @@ export async function getDataCounts(): Promise<{ transactions: number; items: nu
 
 export async function downloadJsonBackup(): Promise<void> {
   const [transactions, items] = await Promise.all([
-    db.transactions.orderBy('id').toArray(),
+    db.transactions.toArray(),
     db.items.toArray(),
   ]);
-  const payload: BackupFile = {
+  saveBackupFile({
     app: 'logistics-inventory',
-    version: 1,
+    version: 2,
     exportedAt: new Date().toISOString(),
     transactions,
     items,
-  };
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-  downloadBlob(blob, 'Logistics_Inventory_Backup.json');
+  });
+}
+
+export function saveBackupFile(backup: BackupFile): void {
+  const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+  downloadBlob(blob, BACKUP_NAME);
 }
 
 export function parseBackup(value: unknown): BackupFile {
-  if (!isRecord(value) || value.app !== 'logistics-inventory' || value.version !== 1) {
+  if (!isRecord(value) || value.app !== 'logistics-inventory' || (value.version !== 1 && value.version !== 2)) {
     throw new Error('This file is not a logistics backup.');
   }
   if (typeof value.exportedAt !== 'string' || Number.isNaN(Date.parse(value.exportedAt))) {
@@ -44,11 +49,12 @@ export function parseBackup(value: unknown): BackupFile {
 
   const transactions = value.transactions.map(normalizeTransaction);
   const items = value.items.map(normalizeItem);
-  const ids = new Set<number>();
+  const ids = new Set<string>();
   for (const transaction of transactions) {
     if (transaction.id !== undefined) {
-      if (ids.has(transaction.id)) throw new Error('This backup contains duplicate transaction ids.');
-      ids.add(transaction.id);
+      const key = String(transaction.id);
+      if (ids.has(key)) throw new Error('This backup contains duplicate transaction ids.');
+      ids.add(key);
     }
   }
   const barcodes = new Set<string>();
@@ -59,7 +65,7 @@ export function parseBackup(value: unknown): BackupFile {
 
   return {
     app: 'logistics-inventory',
-    version: 1,
+    version: value.version,
     exportedAt: value.exportedAt,
     transactions,
     items,
@@ -67,11 +73,19 @@ export function parseBackup(value: unknown): BackupFile {
 }
 
 export async function replaceAllData(backup: BackupFile): Promise<void> {
-  let nextId = backup.transactions.reduce((max, transaction) => Math.max(max, transaction.id ?? 0), 0) + 1;
-  const transactions = backup.transactions.map((transaction) => ({
-    ...transaction,
-    id: transaction.id ?? nextId++,
-  }));
+  let nextId = backup.transactions.reduce((max, transaction) => (
+    typeof transaction.id === 'number' ? Math.max(max, transaction.id) : max
+  ), 0) + 1;
+  const transactions = backup.transactions.map((transaction) => {
+    const id = typeof transaction.id === 'number' ? transaction.id : nextId++;
+    return {
+      ...transaction,
+      id,
+      idempotencyKey: transaction.idempotencyKey ?? (typeof transaction.id === 'string' ? transaction.id : undefined),
+      transactionDate: transaction.transactionDate ?? toDateKey(transaction.timestamp),
+      transactionTime: transaction.transactionTime ?? formatTime(transaction.timestamp),
+    };
+  });
 
   await db.transaction('rw', db.transactions, db.items, async () => {
     await db.transactions.clear();
@@ -91,18 +105,29 @@ function isIso(value: unknown): value is string {
 
 function isTransaction(value: unknown): value is TransactionRecord {
   if (!isRecord(value)) return false;
-  if (value.id !== undefined && (typeof value.id !== 'number' || !Number.isInteger(value.id) || value.id < 1)) return false;
+  if (value.id !== undefined && !isId(value.id)) return false;
   if (typeof value.barcode !== 'string' || !value.barcode.trim() || value.barcode.trim().length > 128) return false;
   if (typeof value.name !== 'string' || !value.name.trim() || value.name.trim().length > 80) return false;
   if (typeof value.reason !== 'string' || !value.reason.trim() || value.reason.trim().length > 300) return false;
   if (typeof value.action !== 'string' || !ACTIONS.has(value.action as TransactionAction)) return false;
+  if (value.transactionDate !== undefined && (typeof value.transactionDate !== 'string' || !isDateKey(value.transactionDate))) return false;
+  if (value.transactionTime !== undefined && (typeof value.transactionTime !== 'string' || !value.transactionTime.trim() || value.transactionTime.length > 32)) return false;
+  if (value.createdBy !== undefined && value.createdBy !== null && typeof value.createdBy !== 'string') return false;
+  if (value.idempotencyKey !== undefined && (typeof value.idempotencyKey !== 'string' || value.idempotencyKey.includes('/'))) return false;
   return isIso(value.timestamp);
+}
+
+function isId(value: unknown): boolean {
+  if (typeof value === 'number') return Number.isInteger(value) && value >= 1;
+  return typeof value === 'string' && value.trim().length > 0 && value.length <= 1400 && !value.includes('/');
 }
 
 function isItem(value: unknown): value is ItemRecord {
   if (!isRecord(value)) return false;
   if (typeof value.barcode !== 'string' || !value.barcode.trim() || value.barcode.trim().length > 128) return false;
   if (!isIso(value.lastUpdated)) return false;
+  if (value.lastTransactionDate !== undefined && value.lastTransactionDate !== null
+    && (typeof value.lastTransactionDate !== 'string' || !isDateKey(value.lastTransactionDate))) return false;
   if (value.status === 'TAKEN') {
     return typeof value.currentHolder === 'string'
       && value.currentHolder.trim().length > 0
@@ -126,6 +151,10 @@ function normalizeTransaction(transaction: TransactionRecord): TransactionRecord
     reason: transaction.reason.trim(),
     action: transaction.action,
     timestamp: transaction.timestamp,
+    transactionDate: transaction.transactionDate,
+    transactionTime: transaction.transactionTime,
+    createdBy: typeof transaction.createdBy === 'string' ? transaction.createdBy : null,
+    idempotencyKey: transaction.idempotencyKey,
   };
 }
 
@@ -137,5 +166,6 @@ function normalizeItem(item: ItemRecord): ItemRecord {
     reason: item.reason?.trim() ?? null,
     takenAt: item.takenAt,
     lastUpdated: item.lastUpdated,
+    lastTransactionDate: item.lastTransactionDate ?? null,
   };
 }

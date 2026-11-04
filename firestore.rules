@@ -1,0 +1,66 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function validTransaction() {
+      let data = request.resource.data;
+      return data.barcode is string
+        && data.barcode.size() > 0
+        && data.barcode.size() <= 128
+        && data.name is string
+        && data.name.size() > 0
+        && data.name.size() <= 80
+        && data.reason is string
+        && data.reason.size() > 0
+        && data.reason.size() <= 300
+        && data.action in ['TAKING', 'RETURNING']
+        && data.transactionDate is string
+        && data.transactionDate.matches('^\\d{4}-\\d{2}-\\d{2}$')
+        && data.transactionTime is string
+        && data.transactionTime.size() > 0
+        && data.transactionTime.size() <= 32
+        && data.createdAt is timestamp
+        && data.createdBy == request.auth.uid;
+    }
+
+    function validItem() {
+      let data = request.resource.data;
+      return data.barcode is string
+        && data.barcode.size() > 0
+        && data.barcode.size() <= 128
+        && data.status in ['AVAILABLE', 'TAKEN']
+        && data.lastUpdated is timestamp
+        && (data.lastTransactionDate == null || (data.lastTransactionDate is string && data.lastTransactionDate.matches('^\\d{4}-\\d{2}-\\d{2}$')))
+        && (
+          (data.status == 'TAKEN'
+            && data.currentHolder is string
+            && data.currentHolder.size() > 0
+            && data.currentHolder.size() <= 80
+            && data.reason is string
+            && data.reason.size() > 0
+            && data.reason.size() <= 300
+            && data.takenAt is timestamp)
+          ||
+          (data.status == 'AVAILABLE'
+            && data.currentHolder == null
+            && data.reason == null
+            && data.takenAt == null)
+        );
+    }
+
+    match /transactions/{id} {
+      allow read: if signedIn();
+      allow create: if signedIn() && validTransaction();
+      allow update, delete: if false;
+    }
+
+    match /items/{id} {
+      allow read: if signedIn();
+      allow create, update: if signedIn() && validItem();
+      allow delete: if false;
+    }
+  }
+}

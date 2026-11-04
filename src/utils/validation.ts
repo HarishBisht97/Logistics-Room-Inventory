@@ -1,10 +1,12 @@
 import type { TransactionAction } from '../types';
+import { isDateKey } from './dateUtils';
 
 export interface TransactionInput {
   barcode: string;
   name: string;
   reason: string;
   action: TransactionAction | '';
+  transactionDate?: string;
 }
 
 export interface FieldErrors {
@@ -12,6 +14,7 @@ export interface FieldErrors {
   name?: string;
   reason?: string;
   action?: string;
+  transactionDate?: string;
 }
 
 export function validateTransaction(input: TransactionInput): FieldErrors {
@@ -33,6 +36,10 @@ export function validateTransaction(input: TransactionInput): FieldErrors {
     errors.action = 'Select Taking or Submitting Back.';
   }
 
+  if (input.transactionDate !== undefined && !isDateKey(input.transactionDate)) {
+    errors.transactionDate = 'Choose a valid transaction date.';
+  }
+
   return errors;
 }
 
@@ -41,5 +48,5 @@ export function hasErrors(errors: FieldErrors): boolean {
 }
 
 export function firstError(errors: FieldErrors): string | null {
-  return errors.barcode ?? errors.name ?? errors.reason ?? errors.action ?? null;
+  return errors.barcode ?? errors.name ?? errors.reason ?? errors.action ?? errors.transactionDate ?? null;
 }

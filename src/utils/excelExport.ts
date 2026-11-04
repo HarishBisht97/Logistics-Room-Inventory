@@ -1,90 +1,129 @@
 import type { Worksheet } from 'exceljs';
 import type { ItemRecord, TransactionRecord } from '../types';
 import { downloadBlob } from './download';
-import { formatDate, formatTime } from './dateUtils';
+import { formatDate, formatDateKey, formatTime, transactionClock, transactionDay } from './dateUtils';
 import { actionLabel } from './labels';
-import { db } from '../db/database';
 
-const EXCEL_NAME = 'Logistics_Inventory_Records.xlsx';
 const SHEET_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
-export async function downloadInventoryExcel(): Promise<void> {
-  const [transactions, takenItems] = await Promise.all([
-    db.transactions.toArray(),
-    db.items.where('status').equals('TAKEN').toArray(),
-  ]);
-  const blob = await buildInventoryWorkbook(transactions, takenItems);
-  downloadBlob(blob, EXCEL_NAME);
+export type ExcelExportScope =
+  | { kind: 'date'; date: string }
+  | { kind: 'range'; start: string; end: string }
+  | { kind: 'all' }
+  | { kind: 'taken' };
+
+interface WorkbookSheets {
+  history?: boolean;
+  taken?: boolean;
+}
+
+export async function downloadInventoryExcel(scope: ExcelExportScope = { kind: 'all' }): Promise<void> {
+  const transactionsApi = await import('../services/transactionService');
+  const itemsApi = await import('../services/itemService');
+  let transactions: TransactionRecord[] = [];
+  let taken: ItemRecord[] = [];
+
+  if (scope.kind === 'date') transactions = await transactionsApi.getTransactionsByDate(scope.date);
+  else if (scope.kind === 'range') transactions = await transactionsApi.getTransactionsByDateRange(scope.start, scope.end);
+  else if (scope.kind === 'all') {
+    [transactions, taken] = await Promise.all([
+      transactionsApi.getAllTransactions(),
+      itemsApi.getCurrentlyTakenItems(),
+    ]);
+  } else {
+    taken = await itemsApi.getCurrentlyTakenItems();
+  }
+
+  const blob = await buildInventoryWorkbook(transactions, taken, {
+    history: scope.kind !== 'taken',
+    taken: scope.kind === 'all' || scope.kind === 'taken',
+  });
+  downloadBlob(blob, workbookName(scope));
 }
 
 export async function buildInventoryWorkbook(
   transactions: TransactionRecord[],
   takenItems: ItemRecord[],
+  sheets: WorkbookSheets = { history: true, taken: true },
 ): Promise<Blob> {
+  const includeHistory = sheets.history !== false;
+  const includeTaken = sheets.taken !== false;
   const { Workbook } = await import('exceljs');
   const workbook = new Workbook();
-  workbook.creator = 'Logistics Room';
+  workbook.creator = 'IIT Bombay Logistics Management System';
   workbook.created = new Date();
 
-  const history = workbook.addWorksheet('Transaction History');
-  history.columns = [
-    { header: 'S.No.', key: 'sno', width: 8 },
-    { header: 'Date', key: 'date', width: 16 },
-    { header: 'Time', key: 'time', width: 14 },
-    { header: 'Barcode / Item ID', key: 'barcode', width: 24 },
-    { header: 'Name', key: 'name', width: 22 },
-    { header: 'Reason', key: 'reason', width: 36 },
-    { header: 'Action', key: 'action', width: 20 },
-  ];
-
-  const chronological = [...transactions].sort((left, right) => left.timestamp.localeCompare(right.timestamp));
-  chronological.forEach((transaction, index) => {
-    history.addRow({
-      sno: index + 1,
-      date: formatDate(transaction.timestamp),
-      time: formatTime(transaction.timestamp),
-      barcode: transaction.barcode,
-      name: transaction.name,
-      reason: transaction.reason,
-      action: actionLabel(transaction.action),
+  if (includeHistory) {
+    const history = workbook.addWorksheet('Transaction History');
+    history.columns = [
+      { header: 'S.No.', key: 'sno', width: 8 },
+      { header: 'Transaction Date', key: 'date', width: 20 },
+      { header: 'Transaction Time', key: 'time', width: 18 },
+      { header: 'Barcode', key: 'barcode', width: 24 },
+      { header: 'Name', key: 'name', width: 22 },
+      { header: 'Reason', key: 'reason', width: 36 },
+      { header: 'Action', key: 'action', width: 20 },
+    ];
+    [...transactions].sort(oldestFirst).forEach((transaction, index) => {
+      history.addRow({
+        sno: index + 1,
+        date: formatDateKey(transactionDay(transaction)),
+        time: transactionClock(transaction),
+        barcode: transaction.barcode,
+        name: transaction.name,
+        reason: transaction.reason,
+        action: actionLabel(transaction.action),
+      });
     });
-  });
-  styleSheet(history, 7);
-  colorActionColumn(history);
+    styleSheet(history, 7);
+    colorActionColumn(history);
+  }
 
-  const taken = workbook.addWorksheet('Currently Taken Items');
-  taken.columns = [
-    { header: 'Barcode / Item ID', key: 'barcode', width: 24 },
-    { header: 'Taken By', key: 'takenBy', width: 22 },
-    { header: 'Reason', key: 'reason', width: 36 },
-    { header: 'Date Taken', key: 'dateTaken', width: 16 },
-    { header: 'Time Taken', key: 'timeTaken', width: 14 },
-    { header: 'Status', key: 'status', width: 14 },
-  ];
-
-  const current = takenItems
-    .filter((item) => item.status === 'TAKEN')
-    .sort((left, right) => (right.takenAt ?? '').localeCompare(left.takenAt ?? ''));
-
-  current.forEach((item) => {
-    taken.addRow({
-      barcode: item.barcode,
-      takenBy: item.currentHolder ?? '',
-      reason: item.reason ?? '',
-      dateTaken: item.takenAt ? formatDate(item.takenAt) : '',
-      timeTaken: item.takenAt ? formatTime(item.takenAt) : '',
-      status: 'Taken',
+  if (includeTaken) {
+    const taken = workbook.addWorksheet('Currently Taken Items');
+    taken.columns = [
+      { header: 'Barcode / Item ID', key: 'barcode', width: 24 },
+      { header: 'Taken By', key: 'takenBy', width: 22 },
+      { header: 'Reason', key: 'reason', width: 36 },
+      { header: 'Date Taken', key: 'dateTaken', width: 16 },
+      { header: 'Time Taken', key: 'timeTaken', width: 14 },
+      { header: 'Status', key: 'status', width: 14 },
+    ];
+    takenItems
+      .filter((item) => item.status === 'TAKEN')
+      .sort((left, right) => (right.takenAt ?? '').localeCompare(left.takenAt ?? ''))
+      .forEach((item) => {
+        taken.addRow({
+          barcode: item.barcode,
+          takenBy: item.currentHolder ?? '',
+          reason: item.reason ?? '',
+          dateTaken: item.lastTransactionDate ? formatDateKey(item.lastTransactionDate) : item.takenAt ? formatDate(item.takenAt) : '',
+          timeTaken: item.takenAt ? formatTime(item.takenAt) : '',
+          status: 'Taken',
+        });
+      });
+    styleSheet(taken, 6);
+    taken.getColumn('status').eachCell((cell, rowNumber) => {
+      if (rowNumber === 1) return;
+      cell.font = { bold: true, color: { argb: 'FFC2410C' } };
     });
-  });
-  styleSheet(taken, 6);
-  taken.getColumn('status').eachCell((cell, rowNumber) => {
-    if (rowNumber === 1) return;
-    cell.font = { bold: true, color: { argb: 'FFC2410C' } };
-  });
+  }
 
   const buffer = await workbook.xlsx.writeBuffer();
-  const bytes = new Uint8Array(buffer);
-  return new Blob([bytes], { type: SHEET_TYPE });
+  return new Blob([new Uint8Array(buffer)], { type: SHEET_TYPE });
+}
+
+function oldestFirst(left: TransactionRecord, right: TransactionRecord): number {
+  const day = transactionDay(left).localeCompare(transactionDay(right));
+  if (day !== 0) return day;
+  return left.timestamp.localeCompare(right.timestamp);
+}
+
+function workbookName(scope: ExcelExportScope): string {
+  if (scope.kind === 'date') return `Logistics_Inventory_${scope.date}.xlsx`;
+  if (scope.kind === 'range') return `Logistics_Inventory_${scope.start}_to_${scope.end}.xlsx`;
+  if (scope.kind === 'taken') return 'Logistics_Currently_Taken.xlsx';
+  return 'Logistics_Inventory_Records.xlsx';
 }
 
 function styleSheet(sheet: Worksheet, columnCount: number): void {

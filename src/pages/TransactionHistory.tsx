@@ -1,15 +1,17 @@
 import { useMemo, useState } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
 import { ScrollText } from 'lucide-react';
 import { ActionBadge } from '../components/ActionBadge';
+import { useAuth } from '../components/AuthGate';
+import { DataTools } from '../components/DataTools';
+import { DateNavigator, shiftRange } from '../components/DateNavigator';
 import { EmptyState, LoadingState } from '../components/EmptyState';
-import { ExportExcelButton } from '../components/DataTools';
 import { PageHeader } from '../components/PageHeader';
 import { SearchField } from '../components/SearchField';
+import { useSelectedDate } from '../components/SelectedDateProvider';
 import { focusRing, secondaryButton, textInput } from '../components/styles';
-import { listTransactions } from '../db/transactionService';
+import { useDateTransactions } from '../services/useLogisticsData';
 import type { TransactionAction, TransactionRecord } from '../types';
-import { formatDate, formatTime, toDateKey } from '../utils/dateUtils';
+import { formatDateKey, formatLongRange, isDateKey, todayKey, transactionClock, transactionDay } from '../utils/dateUtils';
 
 type ActionFilter = 'ALL' | TransactionAction;
 
@@ -20,41 +22,51 @@ const FILTERS: { id: ActionFilter; label: string }[] = [
 ];
 
 export default function TransactionHistory() {
-  const transactions = useLiveQuery(() => listTransactions(), []);
+  const { date } = useSelectedDate();
+  const { configured } = useAuth();
   const [query, setQuery] = useState('');
   const [action, setAction] = useState<ActionFilter>('ALL');
-  const [from, setFrom] = useState('');
-  const [to, setTo] = useState('');
-
+  const [from, setFrom] = useState(date);
+  const [to, setTo] = useState(date);
   const rangeError = from && to && from > to ? 'The start date is after the end date.' : '';
+  const records = useDateTransactions(from, to);
 
   const filtered = useMemo(() => {
     if (rangeError) return [];
     const needle = query.trim().toLowerCase();
-    return (transactions ?? []).filter((transaction) => {
+    return (records.data ?? []).filter((transaction) => {
       if (action !== 'ALL' && transaction.action !== action) return false;
-      const day = toDateKey(transaction.timestamp);
-      if (from && day < from) return false;
-      if (to && day > to) return false;
       if (!needle) return true;
       return transaction.barcode.toLowerCase().includes(needle)
         || transaction.name.toLowerCase().includes(needle);
     });
-  }, [transactions, query, action, from, to, rangeError]);
+  }, [records.data, query, action, rangeError]);
 
-  const filtersActive = query.trim() !== '' || action !== 'ALL' || from !== '' || to !== '';
+  const filtersActive = query.trim() !== '' || action !== 'ALL' || from !== todayKey() || to !== todayKey();
 
   return (
     <div className="space-y-5">
       <PageHeader
         title="Transaction history"
-        description="Every take and return saved on this device."
+        description={
+          configured
+            ? `${formatLongRange(from, to)} from Firestore.`
+            : `${formatLongRange(from, to)} saved on this device.`
+        }
       />
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-sm text-slate-500">Excel export includes every record, not only the filtered list.</p>
-        <ExportExcelButton className="w-full sm:w-auto" />
-      </div>
-
+      <DateNavigator
+        date={from}
+        onChange={(next) => {
+          const shifted = shiftRange(from, to, next);
+          setFrom(shifted.start);
+          setTo(shifted.end);
+        }}
+        onToday={() => {
+          const today = todayKey();
+          setFrom(today);
+          setTo(today);
+        }}
+      />
       <section className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4">
         <SearchField value={query} onChange={setQuery} placeholder="Search by barcode or name" />
         <div className="flex flex-wrap gap-2">
@@ -83,23 +95,40 @@ export default function TransactionHistory() {
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="block text-sm font-medium text-slate-700">
             From
-            <input type="date" value={from} onChange={(event) => setFrom(event.target.value)} className={`${textInput} mt-1.5`} />
+            <input
+              type="date"
+              value={from}
+              onChange={(event) => {
+                if (isDateKey(event.target.value)) setFrom(event.target.value);
+              }}
+              className={`${textInput} mt-1.5`}
+            />
           </label>
           <label className="block text-sm font-medium text-slate-700">
             To
-            <input type="date" value={to} onChange={(event) => setTo(event.target.value)} className={`${textInput} mt-1.5`} />
+            <input
+              type="date"
+              value={to}
+              onChange={(event) => {
+                if (isDateKey(event.target.value)) setTo(event.target.value);
+              }}
+              className={`${textInput} mt-1.5`}
+            />
           </label>
         </div>
+        <p className="text-sm text-slate-500">Showing {formatLongRange(from, to)}.</p>
         {rangeError ? <p className="text-sm text-red-600" role="alert">{rangeError}</p> : null}
+        {records.error ? <p className="text-sm text-red-600" role="alert">{records.error}</p> : null}
         {filtersActive ? (
           <button
             type="button"
             className={secondaryButton}
             onClick={() => {
+              const today = todayKey();
               setQuery('');
               setAction('ALL');
-              setFrom('');
-              setTo('');
+              setFrom(today);
+              setTo(today);
             }}
           >
             Clear filters
@@ -107,19 +136,21 @@ export default function TransactionHistory() {
         ) : null}
       </section>
 
-      {transactions === undefined ? <LoadingState label="Loading history" /> : null}
-      {transactions && transactions.length === 0 ? (
+      <DataTools date={from} start={from} end={to} showBackup={false} />
+
+      {records.loading ? <LoadingState label="Loading history" /> : null}
+      {records.data && records.data.length === 0 ? (
         <EmptyState
           icon={ScrollText}
-          title="No transactions yet"
-          description="Takes and returns will show up here after the first scan."
+          title="No transactions in this range"
+          description="Takes and returns for these dates will show up here."
         />
       ) : null}
-      {transactions && transactions.length > 0 && filtered.length === 0 ? (
+      {records.data && records.data.length > 0 && filtered.length === 0 ? (
         <EmptyState
           icon={ScrollText}
           title="No matching transactions"
-          description="Try a different name, barcode, action, or date range."
+          description="Try a different name, barcode, or action."
         />
       ) : null}
       {filtered.length > 0 ? (
@@ -146,19 +177,19 @@ function HistoryTable({ transactions }: { transactions: TransactionRecord[] }) {
               <th className="px-4 py-3 font-medium">Name</th>
               <th className="px-4 py-3 font-medium">Reason</th>
               <th className="px-4 py-3 font-medium">Action</th>
-              <th className="px-4 py-3 font-medium">Date</th>
+              <th className="px-4 py-3 font-medium">Transaction date</th>
               <th className="px-4 py-3 font-medium">Time</th>
             </tr>
           </thead>
           <tbody>
             {transactions.map((transaction) => (
-              <tr key={transaction.id} className="border-t border-slate-100">
+              <tr key={String(transaction.id ?? `${transaction.barcode}-${transaction.timestamp}`)} className="border-t border-slate-100">
                 <td className="px-4 py-3 font-mono font-medium text-slate-900">{transaction.barcode}</td>
                 <td className="px-4 py-3 text-slate-800">{transaction.name}</td>
                 <td className="max-w-xs px-4 py-3 text-slate-700">{transaction.reason}</td>
                 <td className="px-4 py-3"><ActionBadge action={transaction.action} /></td>
-                <td className="px-4 py-3 whitespace-nowrap text-slate-700">{formatDate(transaction.timestamp)}</td>
-                <td className="px-4 py-3 whitespace-nowrap text-slate-700">{formatTime(transaction.timestamp)}</td>
+                <td className="px-4 py-3 whitespace-nowrap text-slate-700">{formatDateKey(transactionDay(transaction))}</td>
+                <td className="px-4 py-3 whitespace-nowrap text-slate-700">{transactionClock(transaction)}</td>
               </tr>
             ))}
           </tbody>
@@ -172,7 +203,7 @@ function HistoryCards({ transactions }: { transactions: TransactionRecord[] }) {
   return (
     <ul className="space-y-3 md:hidden">
       {transactions.map((transaction) => (
-        <li key={transaction.id} className="rounded-2xl border border-slate-200 bg-white p-4">
+        <li key={String(transaction.id ?? `${transaction.barcode}-${transaction.timestamp}`)} className="rounded-2xl border border-slate-200 bg-white p-4">
           <div className="flex items-start justify-between gap-3">
             <p className="font-mono text-sm font-semibold break-all text-slate-900">{transaction.barcode}</p>
             <ActionBadge action={transaction.action} />
@@ -180,7 +211,7 @@ function HistoryCards({ transactions }: { transactions: TransactionRecord[] }) {
           <p className="mt-2 text-sm font-medium text-slate-900">{transaction.name}</p>
           <p className="mt-1 text-sm text-slate-700">{transaction.reason}</p>
           <p className="mt-2 text-xs text-slate-500">
-            {formatDate(transaction.timestamp)} · {formatTime(transaction.timestamp)}
+            {formatDateKey(transactionDay(transaction))} · {transactionClock(transaction)}
           </p>
         </li>
       ))}

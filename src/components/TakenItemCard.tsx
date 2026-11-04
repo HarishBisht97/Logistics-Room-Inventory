@@ -1,6 +1,6 @@
 import { Undo2 } from 'lucide-react';
 import type { ItemRecord } from '../types';
-import { formatDateTime } from '../utils/dateUtils';
+import { formatDate, formatDateKey, formatTime } from '../utils/dateUtils';
 import { greenButton } from './styles';
 
 interface TakenItemCardProps {
@@ -27,8 +27,16 @@ export function TakenItemCard({ item, onReturn }: TakenItemCardProps) {
           <dd className="mt-0.5 text-slate-800">{item.reason}</dd>
         </div>
         <div className="flex justify-between gap-3">
-          <dt className="text-slate-500">Taken on</dt>
-          <dd className="text-right text-slate-800">{item.takenAt ? formatDateTime(item.takenAt) : '—'}</dd>
+          <dt className="text-slate-500">Date taken</dt>
+          <dd className="text-right text-slate-800">{item.lastTransactionDate ? formatDateKey(item.lastTransactionDate) : item.takenAt ? formatDate(item.takenAt) : '—'}</dd>
+        </div>
+        <div className="flex justify-between gap-3">
+          <dt className="text-slate-500">Time taken</dt>
+          <dd className="text-right text-slate-800">{item.takenAt ? formatTime(item.takenAt) : '—'}</dd>
+        </div>
+        <div className="flex justify-between gap-3">
+          <dt className="text-slate-500">Status</dt>
+          <dd className="text-right font-medium text-orange-700">Taken</dd>
         </div>
       </dl>
       <button type="button" onClick={() => onReturn(item)} className={`${greenButton} mt-4 w-full`}>
