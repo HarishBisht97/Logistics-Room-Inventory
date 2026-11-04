@@ -198,6 +198,18 @@ function CloudAuth({ children }: { children: ReactNode }) {
         onSignOut={() => void value.signOut()}
       />
     );
+  } else if (profile.status === 'REVOKED') {
+    content = (
+      <AccountStatusScreen
+        tone="rejected"
+        title="Access revoked"
+        message="An administrator has revoked this account. You cannot view records or create transactions. Your earlier records are kept."
+        detail="Signing in again does not restore access. An administrator can restore it from Manage Users."
+        email={profile.email}
+        accountId={profile.uid}
+        onSignOut={() => void value.signOut()}
+      />
+    );
   } else {
     content = children;
   }

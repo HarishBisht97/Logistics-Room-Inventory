@@ -65,7 +65,7 @@ export interface BackupFile {
 
 export type UserRole = 'ADMIN' | 'USER';
 
-export type AccountStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
+export type AccountStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'REVOKED';
 
 export interface UserProfile {
   uid: string;

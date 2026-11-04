@@ -55,7 +55,7 @@ function asAccountError(error: unknown, denied = 'You do not have permission to 
 export function profileFromDoc(id: string, data: DocumentData | undefined): UserProfile | null {
   if (!data) return null;
   if (data.role !== 'ADMIN' && data.role !== 'USER') return null;
-  if (data.status !== 'PENDING' && data.status !== 'APPROVED' && data.status !== 'REJECTED') return null;
+  if (data.status !== 'PENDING' && data.status !== 'APPROVED' && data.status !== 'REJECTED' && data.status !== 'REVOKED') return null;
   const name = typeof data.name === 'string' && data.name.trim() ? data.name.trim() : 'Staff';
   return {
     uid: typeof data.uid === 'string' && data.uid ? data.uid : id,
@@ -148,6 +148,14 @@ export function approveUser(uid: string, actorUid: string): Promise<void> {
 
 export function rejectUser(uid: string, actorUid: string): Promise<void> {
   return updateAccount(uid, actorUid, { status: 'REJECTED' });
+}
+
+export function revokeUser(uid: string, actorUid: string): Promise<void> {
+  return updateAccount(uid, actorUid, { status: 'REVOKED' });
+}
+
+export function restoreUser(uid: string, actorUid: string): Promise<void> {
+  return updateAccount(uid, actorUid, { status: 'APPROVED' });
 }
 
 export function setUserRole(uid: string, actorUid: string, role: UserRole): Promise<void> {

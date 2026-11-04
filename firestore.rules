@@ -122,6 +122,14 @@ service cloud.firestore {
             && request.resource.data.status == 'APPROVED'
             && request.resource.data.role in ['ADMIN', 'USER']
             && request.resource.data.role != resource.data.role)
+          ||
+          (resource.data.status == 'APPROVED'
+            && request.resource.data.status == 'REVOKED'
+            && request.resource.data.role == resource.data.role)
+          ||
+          (resource.data.status == 'REVOKED'
+            && request.resource.data.status == 'APPROVED'
+            && request.resource.data.role == resource.data.role)
         );
 
       allow delete: if false;

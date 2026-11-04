@@ -7,11 +7,11 @@ import { EmptyState, LoadingState } from '../components/EmptyState';
 import { PageHeader } from '../components/PageHeader';
 import { focusRing } from '../components/styles';
 import { useToast } from '../components/ToastProvider';
-import { approveUser, rejectUser, setUserRole, subscribeUsers } from '../services/userService';
+import { approveUser, rejectUser, restoreUser, revokeUser, setUserRole, subscribeUsers } from '../services/userService';
 import type { AccountStatus, UserProfile, UserRole } from '../types';
 import { formatDate } from '../utils/dateUtils';
 
-type UserFilter = 'all' | 'pending' | 'approved' | 'rejected' | 'admins' | 'users';
+type UserFilter = 'all' | 'pending' | 'approved' | 'rejected' | 'revoked' | 'admins' | 'users';
 
 interface FilterOption {
   id: UserFilter;
@@ -23,12 +23,15 @@ const FILTERS: FilterOption[] = [
   { id: 'pending', label: 'Pending' },
   { id: 'approved', label: 'Approved' },
   { id: 'rejected', label: 'Rejected' },
+  { id: 'revoked', label: 'Revoked' },
   { id: 'admins', label: 'Admins' },
   { id: 'users', label: 'Regular Users' },
 ];
 
 type AccountAction =
   | { kind: 'reject'; person: UserProfile }
+  | { kind: 'revoke'; person: UserProfile }
+  | { kind: 'restore'; person: UserProfile }
   | { kind: 'promote'; person: UserProfile }
   | { kind: 'demote'; person: UserProfile };
 
@@ -55,6 +58,7 @@ export default function ManageUsers() {
     if (filter === 'pending') return list.filter((person) => person.status === 'PENDING');
     if (filter === 'approved') return list.filter((person) => person.status === 'APPROVED');
     if (filter === 'rejected') return list.filter((person) => person.status === 'REJECTED');
+    if (filter === 'revoked') return list.filter((person) => person.status === 'REVOKED');
     if (filter === 'admins') return list.filter((person) => person.role === 'ADMIN');
     if (filter === 'users') return list.filter((person) => person.role === 'USER');
     return list;
@@ -89,6 +93,14 @@ export default function ManageUsers() {
       void run(() => rejectUser(action.person.uid, uid), `${action.person.name} was rejected.`);
       return;
     }
+    if (action.kind === 'revoke') {
+      void run(() => revokeUser(action.person.uid, uid), `${action.person.name} can no longer open the logbook.`);
+      return;
+    }
+    if (action.kind === 'restore') {
+      void run(() => restoreUser(action.person.uid, uid), `${action.person.name} can open the logbook again.`);
+      return;
+    }
     const role: UserRole = action.kind === 'promote' ? 'ADMIN' : 'USER';
     const success = role === 'ADMIN'
       ? `${action.person.name} can now manage users.`
@@ -104,7 +116,7 @@ export default function ManageUsers() {
     <div className="space-y-5">
       <PageHeader
         title="Manage Users"
-        description="Approve new staff and choose who can manage users."
+        description="Approve new staff, revoke access, and choose who can manage users."
       />
       {error ? <p className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">{error}</p> : null}
       {users ? (
@@ -170,6 +182,8 @@ export default function ManageUsers() {
                         stacked
                         onApprove={approve}
                         onReject={(next) => setAction({ kind: 'reject', person: next })}
+                        onRevoke={(next) => setAction({ kind: 'revoke', person: next })}
+                        onRestore={(next) => setAction({ kind: 'restore', person: next })}
                         onPromote={(next) => setAction({ kind: 'promote', person: next })}
                         onDemote={(next) => setAction({ kind: 'demote', person: next })}
                       />
@@ -208,6 +222,8 @@ export default function ManageUsers() {
                             busy={busy}
                             onApprove={approve}
                             onReject={(next) => setAction({ kind: 'reject', person: next })}
+                            onRevoke={(next) => setAction({ kind: 'revoke', person: next })}
+                            onRestore={(next) => setAction({ kind: 'restore', person: next })}
                             onPromote={(next) => setAction({ kind: 'promote', person: next })}
                             onDemote={(next) => setAction({ kind: 'demote', person: next })}
                           />
@@ -253,6 +269,22 @@ function dialogCopy(action: AccountAction): { title: string; description: string
       tone: 'danger',
     };
   }
+  if (action.kind === 'revoke') {
+    return {
+      title: 'Revoke access?',
+      description: `${name} will be signed out of the logbook. Their past transactions stay. This does not delete their Firebase sign-in account.`,
+      confirmLabel: 'Revoke access',
+      tone: 'danger',
+    };
+  }
+  if (action.kind === 'restore') {
+    return {
+      title: 'Restore access?',
+      description: `${name} will be able to open the logbook again with the same role.`,
+      confirmLabel: 'Restore access',
+      tone: 'neutral',
+    };
+  }
   if (action.kind === 'promote') {
     return {
       title: 'Make this person an admin?',
@@ -274,8 +306,10 @@ function StatusBadge({ status }: { status: AccountStatus }) {
     ? 'bg-orange-100 text-orange-800'
     : status === 'APPROVED'
       ? 'bg-emerald-100 text-emerald-800'
-      : 'bg-red-100 text-red-800';
-  const label = status === 'PENDING' ? 'Pending' : status === 'APPROVED' ? 'Approved' : 'Rejected';
+      : status === 'REVOKED'
+        ? 'bg-slate-200 text-slate-700'
+        : 'bg-red-100 text-red-800';
+  const label = status === 'PENDING' ? 'Pending' : status === 'APPROVED' ? 'Approved' : status === 'REVOKED' ? 'Revoked' : 'Rejected';
   return <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${tone}`}>{label}</span>;
 }
 
@@ -295,6 +329,8 @@ function AccountActions({
   stacked = false,
   onApprove,
   onReject,
+  onRevoke,
+  onRestore,
   onPromote,
   onDemote,
 }: {
@@ -304,6 +340,8 @@ function AccountActions({
   stacked?: boolean;
   onApprove: (person: UserProfile) => void;
   onReject: (person: UserProfile) => void;
+  onRevoke: (person: UserProfile) => void;
+  onRestore: (person: UserProfile) => void;
   onPromote: (person: UserProfile) => void;
   onDemote: (person: UserProfile) => void;
 }) {
@@ -327,11 +365,24 @@ function AccountActions({
     );
   }
 
+  if (person.status === 'REVOKED') {
+    return (
+      <div className={layout}>
+        <button type="button" className={`${actionButton} border border-slate-200 bg-white text-slate-800 hover:bg-slate-50 ${width}`} disabled={busy} onClick={() => onRestore(person)}>
+          Restore access
+        </button>
+      </div>
+    );
+  }
+
   if (person.status === 'APPROVED' && person.role === 'USER') {
     return (
       <div className={layout}>
         <button type="button" className={`${actionButton} border border-slate-200 bg-white text-slate-800 hover:bg-slate-50 ${width}`} disabled={busy} onClick={() => onPromote(person)}>
           Make Admin
+        </button>
+        <button type="button" className={`${actionButton} bg-red-600 text-white hover:bg-red-700 ${width}`} disabled={busy} onClick={() => onRevoke(person)}>
+          Revoke access
         </button>
       </div>
     );
@@ -342,6 +393,9 @@ function AccountActions({
       <div className={layout}>
         <button type="button" className={`${actionButton} border border-red-200 bg-white text-red-700 hover:bg-red-50 ${width}`} disabled={busy} onClick={() => onDemote(person)}>
           Remove Admin
+        </button>
+        <button type="button" className={`${actionButton} bg-red-600 text-white hover:bg-red-700 ${width}`} disabled={busy} onClick={() => onRevoke(person)}>
+          Revoke access
         </button>
       </div>
     );

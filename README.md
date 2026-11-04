@@ -33,7 +33,7 @@ In the Firebase console:
 
 ## Staff approval
 
-New accounts are regular users with status `PENDING`. They stay on a waiting screen until an administrator approves them. Approved accounts use role `USER` until an administrator promotes them. Rejected accounts cannot open the logbook. Signing in again does not create a second profile.
+New accounts are regular users with status `PENDING`. They stay on a waiting screen until an administrator approves them. Approved accounts use role `USER` until an administrator promotes them. Rejected accounts cannot open the logbook. An administrator can revoke an approved account; that person keeps their past records but cannot open the logbook until access is restored. Signing in again does not create a second profile. Revoking access does not delete the Firebase sign-in account.
 
 The app never makes the first person an administrator. After the rules are deployed, create that admin in the Firebase console:
 
