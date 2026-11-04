@@ -1,4 +1,5 @@
 import { useEffect, type ReactNode } from 'react';
+import { useOptionalAccess } from './AccessProvider';
 
 interface PageHeaderProps {
   title: string;
@@ -8,9 +9,11 @@ interface PageHeaderProps {
 }
 
 export function PageHeader({ title, description, action, className = '' }: PageHeaderProps) {
+  const access = useOptionalAccess();
+  const appName = access?.settings.applicationName.trim() || 'IPT Logbook';
   useEffect(() => {
-    document.title = `${title} · IPT Logbook`;
-  }, [title]);
+    document.title = `${title} · ${appName}`;
+  }, [title, appName]);
 
   return (
     <div className={`flex items-start justify-between gap-3 ${className}`}>

@@ -1,4 +1,4 @@
-import { LayoutDashboard, PackageOpen, ScanBarcode, ScrollText, type LucideIcon } from 'lucide-react';
+import { LayoutDashboard, PackageOpen, ScanBarcode, ScrollText, Shield, type LucideIcon } from 'lucide-react';
 
 export interface NavItem {
   to: string;
@@ -12,4 +12,5 @@ export const NAV_ITEMS: NavItem[] = [
   { to: '/scan', label: 'Scan', icon: ScanBarcode },
   { to: '/taken', label: 'Taken', icon: PackageOpen },
   { to: '/history', label: 'History', icon: ScrollText },
+  { to: '/admin', label: 'Admin', icon: Shield },
 ];

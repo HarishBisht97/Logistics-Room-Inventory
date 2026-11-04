@@ -14,6 +14,8 @@ export interface TransactionRecord {
   transactionDate?: string;
   transactionTime?: string;
   createdBy?: string | null;
+  createdByName?: string | null;
+  createdByEmail?: string | null;
   idempotencyKey?: string;
 }
 

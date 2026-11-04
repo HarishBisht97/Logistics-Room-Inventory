@@ -6,6 +6,7 @@ import { SignInScreen } from './SignInScreen';
 
 interface AuthState {
   configured: boolean;
+  uid: string | null;
   email: string | null;
   signOut: () => Promise<void>;
 }
@@ -14,6 +15,7 @@ const AuthContext = createContext<AuthState | null>(null);
 
 const localAuth: AuthState = {
   configured: false,
+  uid: null,
   email: null,
   async signOut() {},
 };
@@ -33,18 +35,21 @@ export function useAuth(): AuthState {
 
 function CloudAuth({ children }: { children: ReactNode }) {
   const [email, setEmail] = useState<string | null>(null);
+  const [uid, setUid] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
 
   useEffect(() => onAuthStateChanged(getFirebaseAuth(), (user) => {
     setEmail(user?.email ?? null);
+    setUid(user?.uid ?? null);
     setReady(true);
   }), []);
 
   const value = useMemo<AuthState>(() => ({
     configured: true,
+    uid,
     email,
     signOut: () => signOut(getFirebaseAuth()),
-  }), [email]);
+  }), [email, uid]);
 
   if (!ready) {
     return (

@@ -5,7 +5,7 @@ import { greenButton } from './styles';
 
 interface TakenItemCardProps {
   item: ItemRecord;
-  onReturn: (item: ItemRecord) => void;
+  onReturn?: (item: ItemRecord) => void;
 }
 
 export function TakenItemCard({ item, onReturn }: TakenItemCardProps) {
@@ -39,10 +39,12 @@ export function TakenItemCard({ item, onReturn }: TakenItemCardProps) {
           <dd className="text-right font-medium text-orange-700">Taken</dd>
         </div>
       </dl>
-      <button type="button" onClick={() => onReturn(item)} className={`${greenButton} mt-4 w-full`}>
-        <Undo2 size={18} />
-        Submit back
-      </button>
+      {onReturn ? (
+        <button type="button" onClick={() => onReturn(item)} className={`${greenButton} mt-4 w-full`}>
+          <Undo2 size={18} />
+          Submit back
+        </button>
+      ) : null}
     </article>
   );
 }

@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { FileSpreadsheet, LoaderCircle } from 'lucide-react';
 import { formatLongRange, isDateKey } from '../utils/dateUtils';
 import { downloadInventoryExcel, type ExcelExportScope } from '../utils/excelExport';
+import { writeAudit } from '../services/accountService';
+import { useAccess } from './AccessProvider';
 import { useToast } from './ToastProvider';
 import { secondaryButton } from './styles';
 
@@ -12,9 +14,13 @@ interface DataToolsProps {
 }
 
 export function DataTools({ date, start, end }: DataToolsProps) {
+  const access = useAccess();
   const rangeStart = start && isDateKey(start) ? start : date;
   const rangeEnd = end && isDateKey(end) ? end : date;
   const hasRange = rangeStart !== rangeEnd && rangeStart < rangeEnd;
+  if (access.configured && (!access.featureEnabled('excel') || !access.can('exportExcel') || !access.can('viewAllHistory'))) {
+    return null;
+  }
 
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-4">
@@ -36,6 +42,7 @@ export function DataTools({ date, start, end }: DataToolsProps) {
 
 function ExportButton({ scope, label }: { scope: ExcelExportScope; label: string }) {
   const toast = useToast();
+  const access = useAccess();
   const [busy, setBusy] = useState(false);
 
   async function onClick() {
@@ -43,6 +50,14 @@ function ExportButton({ scope, label }: { scope: ExcelExportScope; label: string
     setBusy(true);
     try {
       await downloadInventoryExcel(scope);
+      if (access.profile) {
+        try {
+          await writeAudit(access.profile, 'DATA_EXPORTED', `Exported ${label}.`, null, { scope: scope.kind });
+        } catch (error) {
+          toast.error(error instanceof Error ? error.message : 'The file downloaded, but the activity log was not updated.');
+          return;
+        }
+      }
       toast.success('Excel file downloaded.');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Could not create the Excel file.');

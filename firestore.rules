@@ -1,12 +1,211 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    // The only account that can create the first Super Admin profile.
+    // Change this email, then deploy the rules, before anyone else signs in.
+    function isBootstrapEmail(email) {
+      return email is string && email.matches('(?i)^26m0307@iitb\\.ac\\.in$');
+    }
+
     function signedIn() {
       return request.auth != null;
     }
 
-    function validTransaction() {
-      let data = request.resource.data;
+    function authEmail() {
+      return request.auth.token.email;
+    }
+
+    function userPath(uid) {
+      return /databases/$(database)/documents/users/$(uid);
+    }
+
+    function settingsPath() {
+      return /databases/$(database)/documents/appSettings/config;
+    }
+
+    function invitationPath(email) {
+      return /databases/$(database)/documents/invitations/$(email);
+    }
+
+    function hasProfile() {
+      return signedIn() && exists(userPath(request.auth.uid));
+    }
+
+    function userDoc() {
+      return get(userPath(request.auth.uid)).data;
+    }
+
+    function isActive() {
+      return hasProfile() && userDoc().status == 'ACTIVE';
+    }
+
+    function isSuperAdmin() {
+      return isActive() && userDoc().role == 'SUPER_ADMIN';
+    }
+
+    function isAdmin() {
+      return isActive() && userDoc().role == 'ADMIN';
+    }
+
+    function can(permission) {
+      return isSuperAdmin() || (isActive() && userDoc().permissions[permission] == true);
+    }
+
+    function featureAllows(name) {
+      return isSuperAdmin()
+        || !exists(settingsPath())
+        || get(settingsPath()).data.features[name] != false;
+    }
+
+    function approvalRequired() {
+      return !exists(settingsPath()) || get(settingsPath()).data.approvalRequired != false;
+    }
+
+    function registrationEnabled() {
+      return exists(settingsPath()) && get(settingsPath()).data.registrationEnabled == true;
+    }
+
+    function userPermissions() {
+      return {
+        'scanItem': true,
+        'recordTransaction': true,
+        'viewCurrentlyTaken': true,
+        'viewAllHistory': true,
+        'exportExcel': true,
+        'manageInventory': false,
+        'manageUsers': false,
+        'adminPanel': false,
+        'inviteUsers': false,
+        'viewActivity': false
+      };
+    }
+
+    function adminPermissions() {
+      return {
+        'scanItem': true,
+        'recordTransaction': true,
+        'viewCurrentlyTaken': true,
+        'viewAllHistory': true,
+        'exportExcel': true,
+        'manageInventory': true,
+        'manageUsers': true,
+        'adminPanel': true,
+        'inviteUsers': true,
+        'viewActivity': true
+      };
+    }
+
+    function fullPermissions() {
+      return {
+        'scanItem': true,
+        'recordTransaction': true,
+        'viewCurrentlyTaken': true,
+        'viewAllHistory': true,
+        'exportExcel': true,
+        'manageInventory': true,
+        'manageUsers': true,
+        'adminPanel': true,
+        'inviteUsers': true,
+        'viewActivity': true
+      };
+    }
+
+    function validPermissionMap(perms) {
+      return perms is map
+        && perms.keys().hasOnly([
+          'scanItem', 'recordTransaction', 'viewCurrentlyTaken', 'viewAllHistory', 'exportExcel',
+          'manageInventory', 'manageUsers', 'adminPanel', 'inviteUsers', 'viewActivity'
+        ])
+        && perms.scanItem is bool
+        && perms.recordTransaction is bool
+        && perms.viewCurrentlyTaken is bool
+        && perms.viewAllHistory is bool
+        && perms.exportExcel is bool
+        && perms.manageInventory is bool
+        && perms.manageUsers is bool
+        && perms.adminPanel is bool
+        && perms.inviteUsers is bool
+        && perms.viewActivity is bool;
+    }
+
+    function validIdentity(data, uid) {
+      return data.uid == uid
+        && (data.email == authEmail() || (isBootstrapEmail(authEmail()) && isBootstrapEmail(data.email)))
+        && data.name is string
+        && data.name.size() > 0
+        && data.name.size() <= 80
+        && data.createdAt == request.time
+        && data.lastLoginAt == request.time
+        && data.lastActiveAt == request.time
+        && data.keys().hasOnly([
+          'uid', 'name', 'email', 'role', 'status', 'permissions', 'createdAt', 'lastLoginAt', 'lastActiveAt', 'protected'
+        ]);
+    }
+
+    function validSelfCreate(data, uid) {
+      return validIdentity(data, uid) && (
+        (isBootstrapEmail(authEmail())
+          && data.role == 'SUPER_ADMIN'
+          && data.status == 'ACTIVE'
+          && data.protected == true
+          && data.permissions == fullPermissions())
+        || (exists(invitationPath(authEmail()))
+          && get(invitationPath(authEmail())).data.status == 'INVITED'
+          && get(invitationPath(authEmail())).data.email == authEmail()
+          && data.role == get(invitationPath(authEmail())).data.role
+          && data.role in ['ADMIN', 'USER']
+          && data.name == get(invitationPath(authEmail())).data.name
+          && data.protected == false
+          && ((approvalRequired() && data.status == 'PENDING_APPROVAL') || (!approvalRequired() && data.status == 'ACTIVE'))
+          && ((data.role == 'ADMIN' && data.permissions == adminPermissions()) || (data.role == 'USER' && data.permissions == userPermissions())))
+        || (registrationEnabled()
+          && (!exists(invitationPath(authEmail())) || get(invitationPath(authEmail())).data.status == 'REVOKED')
+          && data.role == 'USER'
+          && data.protected == false
+          && data.permissions == userPermissions()
+          && ((approvalRequired() && data.status == 'PENDING_APPROVAL') || (!approvalRequired() && data.status == 'ACTIVE')))
+      );
+    }
+
+    function selfActivity(userId) {
+      return request.auth.uid == userId
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastLoginAt', 'lastActiveAt'])
+        && request.resource.data.lastLoginAt == request.time
+        && request.resource.data.lastActiveAt == request.time;
+    }
+
+    function selfName(userId) {
+      return request.auth.uid == userId
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name'])
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.name.size() <= 80;
+    }
+
+    function superAdminManagesUser(userId) {
+      return isSuperAdmin()
+        && request.auth.uid != userId
+        && resource.data.protected != true
+        && request.resource.data.protected == false
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role', 'status', 'permissions'])
+        && request.resource.data.role in ['SUPER_ADMIN', 'ADMIN', 'USER']
+        && request.resource.data.status in ['PENDING_APPROVAL', 'ACTIVE', 'SUSPENDED', 'REJECTED', 'REMOVED']
+        && validPermissionMap(request.resource.data.permissions);
+    }
+
+    function adminManagesUser(userId) {
+      return isAdmin()
+        && can('manageUsers')
+        && request.auth.uid != userId
+        && resource.data.protected != true
+        && resource.data.role == 'USER'
+        && request.resource.data.role == 'USER'
+        && request.resource.data.protected == false
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+        && request.resource.data.status in ['PENDING_APPROVAL', 'ACTIVE', 'SUSPENDED', 'REJECTED', 'REMOVED'];
+    }
+
+    function validTransaction(data) {
       return data.barcode is string
         && data.barcode.size() > 0
         && data.barcode.size() <= 128
@@ -23,17 +222,29 @@ service cloud.firestore {
         && data.transactionTime.size() > 0
         && data.transactionTime.size() <= 32
         && data.createdAt is timestamp
-        && data.createdBy == request.auth.uid;
+        && data.createdBy == request.auth.uid
+        && data.createdByEmail == authEmail()
+        && data.createdByName == userDoc().name
+        && data.createdByName.size() > 0
+        && data.createdByName.size() <= 80
+        && data.keys().hasAll([
+          'barcode', 'name', 'reason', 'action', 'transactionDate', 'transactionTime',
+          'createdAt', 'createdBy', 'createdByName', 'createdByEmail'
+        ])
+        && data.keys().hasOnly([
+          'barcode', 'name', 'reason', 'action', 'transactionDate', 'transactionTime',
+          'createdAt', 'createdBy', 'createdByName', 'createdByEmail', 'legacyImport'
+        ]);
     }
 
-    function validItem() {
-      let data = request.resource.data;
+    function validItem(data) {
       return data.barcode is string
         && data.barcode.size() > 0
         && data.barcode.size() <= 128
         && data.status in ['AVAILABLE', 'TAKEN']
         && data.lastUpdated is timestamp
         && (data.lastTransactionDate == null || (data.lastTransactionDate is string && data.lastTransactionDate.matches('^\\d{4}-\\d{2}-\\d{2}$')))
+        && data.keys().hasOnly(['barcode', 'status', 'currentHolder', 'reason', 'takenAt', 'lastUpdated', 'lastTransactionDate'])
         && (
           (data.status == 'TAKEN'
             && data.currentHolder is string
@@ -51,15 +262,144 @@ service cloud.firestore {
         );
     }
 
-    match /transactions/{id} {
-      allow read: if signedIn();
-      allow create: if signedIn() && validTransaction();
+    function itemRecordedNow(data) {
+      return data.lastUpdated == request.time
+        && (data.status == 'AVAILABLE' || data.takenAt == request.time);
+    }
+
+    match /users/{uid} {
+      allow read: if signedIn() && (
+        request.auth.uid == uid || can('adminPanel') || can('manageUsers') || can('viewActivity')
+      );
+      allow create: if signedIn() && request.auth.uid == uid && validSelfCreate(request.resource.data, uid);
+      allow update: if selfActivity(uid) || selfName(uid) || superAdminManagesUser(uid) || adminManagesUser(uid);
+      allow delete: if false;
+    }
+
+    function validInvitation(emailId) {
+      let data = request.resource.data;
+      return can('inviteUsers')
+        && emailId != authEmail()
+        && emailId == data.email
+        && data.name is string
+        && data.name.size() > 0
+        && data.name.size() <= 80
+        && data.role in ['ADMIN', 'USER']
+        && (isSuperAdmin() || data.role == 'USER')
+        && data.status == 'INVITED'
+        && data.invitedBy == request.auth.uid
+        && data.invitedAt == request.time
+        && data.keys().hasOnly(['email', 'name', 'role', 'status', 'invitedBy', 'invitedAt']);
+    }
+
+    match /invitations/{emailId} {
+      allow get: if signedIn() && (can('manageUsers') || can('inviteUsers') || emailId == authEmail());
+      allow list: if can('manageUsers') || can('inviteUsers');
+      allow create: if validInvitation(emailId);
+      allow update: if can('inviteUsers') && (
+        (resource.data.status == 'INVITED'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+          && request.resource.data.status == 'REVOKED')
+        || (resource.data.status == 'REVOKED' && validInvitation(emailId))
+      );
+      allow delete: if false;
+    }
+
+    match /appSettings/{id} {
+      allow read: if signedIn() && id == 'config';
+      allow create, update: if isSuperAdmin()
+        && id == 'config'
+        && request.resource.data.applicationName is string
+        && request.resource.data.applicationName.size() > 0
+        && request.resource.data.applicationName.size() <= 80
+        && request.resource.data.institutionName is string
+        && request.resource.data.institutionName.size() > 0
+        && request.resource.data.institutionName.size() <= 120
+        && (request.resource.data.logoUrl == '' || request.resource.data.logoUrl.matches('^https://.{1,480}$'))
+        && request.resource.data.registrationEnabled is bool
+        && request.resource.data.approvalRequired is bool
+        && request.resource.data.defaultRole == 'USER'
+        && request.resource.data.transactionEditingEnabled is bool
+        && request.resource.data.features.keys().hasOnly(['scan', 'transactions', 'history', 'taken', 'excel'])
+        && request.resource.data.features.scan is bool
+        && request.resource.data.features.transactions is bool
+        && request.resource.data.features.history is bool
+        && request.resource.data.features.taken is bool
+        && request.resource.data.features.excel is bool
+        && request.resource.data.updatedBy == request.auth.uid
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.keys().hasOnly([
+          'applicationName', 'institutionName', 'logoUrl', 'registrationEnabled', 'approvalRequired',
+          'defaultRole', 'transactionEditingEnabled', 'features', 'updatedAt', 'updatedBy'
+        ]);
+      allow delete: if false;
+    }
+
+    match /auditLogs/{id} {
+      allow read: if can('viewActivity') || can('adminPanel');
+      allow create: if hasProfile()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.userEmail == authEmail()
+        && request.resource.data.userName == userDoc().name
+        && request.resource.data.action is string
+        && request.resource.data.action.matches('^[A-Z_]{3,64}$')
+        && request.resource.data.description is string
+        && request.resource.data.description.size() > 0
+        && request.resource.data.description.size() <= 500
+        && (request.resource.data.targetId == null || (request.resource.data.targetId is string && request.resource.data.targetId.size() <= 200))
+        && request.resource.data.timestamp == request.time
+        && request.resource.data.metadata is map
+        && request.resource.data.metadata.size() <= 8
+        && request.resource.data.keys().hasOnly([
+          'userId', 'userName', 'userEmail', 'action', 'description', 'targetId', 'timestamp', 'metadata'
+        ])
+        && (
+          isActive()
+          || request.resource.data.action in ['LOGIN', 'LOGOUT']
+        );
       allow update, delete: if false;
     }
 
+    match /transactions/{id} {
+      allow read: if isActive() && (
+        isSuperAdmin()
+        || (featureAllows('history') && can('viewAllHistory'))
+        || (featureAllows('history') && resource.data.createdBy == request.auth.uid)
+      );
+      allow create: if isActive()
+        && featureAllows('transactions')
+        && can('recordTransaction')
+        && validTransaction(request.resource.data)
+        && (
+          (request.resource.data.createdAt == request.time && request.resource.data.legacyImport != true)
+          || (isSuperAdmin()
+            && request.resource.data.legacyImport == true
+            && request.resource.data.createdAt <= request.time)
+        );
+      allow update: if isSuperAdmin()
+        && exists(settingsPath())
+        && get(settingsPath()).data.transactionEditingEnabled == true
+        && validTransaction(request.resource.data)
+        && request.resource.data.createdBy == resource.data.createdBy
+        && request.resource.data.createdByEmail == resource.data.createdByEmail
+        && request.resource.data.createdByName == resource.data.createdByName
+        && request.resource.data.createdAt == resource.data.createdAt;
+      allow delete: if false;
+    }
+
     match /items/{id} {
-      allow read: if signedIn();
-      allow create, update: if signedIn() && validItem();
+      allow read: if isActive() && (
+        isSuperAdmin()
+        || (can('viewCurrentlyTaken') && featureAllows('taken'))
+        || (can('recordTransaction') && featureAllows('transactions'))
+        || can('manageInventory')
+      );
+      allow create, update: if isActive()
+        && validItem(request.resource.data)
+        && (
+          (((can('recordTransaction') && featureAllows('transactions')) || can('manageInventory')) && itemRecordedNow(request.resource.data))
+          || (isSuperAdmin() && request.resource.data.lastUpdated <= request.time && (request.resource.data.takenAt == null || request.resource.data.takenAt <= request.time))
+        );
       allow delete: if false;
     }
   }

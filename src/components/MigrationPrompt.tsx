@@ -2,17 +2,19 @@ import { useEffect, useState } from 'react';
 import { getDataCounts } from '../db/backupService';
 import { isFirebaseConfigured } from '../firebase/firebase';
 import { isMigrationComplete, migrateIndexedDbToFirestore } from '../services/firebaseService';
+import { useAccess } from './AccessProvider';
 import { ConfirmDialog } from './ConfirmDialog';
 import { useToast } from './ToastProvider';
 
 export function MigrationPrompt() {
   const toast = useToast();
+  const access = useAccess();
   const [counts, setCounts] = useState<{ transactions: number; items: number } | null>(null);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    if (!isFirebaseConfigured || isMigrationComplete()) return undefined;
+    if (!isFirebaseConfigured || !access.isSuperAdmin || isMigrationComplete()) return undefined;
     let active = true;
     getDataCounts().then((next) => {
       if (!active) return;
@@ -24,7 +26,7 @@ export function MigrationPrompt() {
     return () => {
       active = false;
     };
-  }, [toast]);
+  }, [toast, access.isSuperAdmin]);
 
   if (!open || !counts) return null;
 

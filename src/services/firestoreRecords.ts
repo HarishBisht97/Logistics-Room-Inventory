@@ -105,6 +105,8 @@ export function transactionFromDoc(snapshot: DocSnap): TransactionRecord | null 
     transactionDate,
     transactionTime,
     createdBy: typeof data.createdBy === 'string' ? data.createdBy : null,
+    createdByName: typeof data.createdByName === 'string' ? data.createdByName : null,
+    createdByEmail: typeof data.createdByEmail === 'string' ? data.createdByEmail : null,
     idempotencyKey: snapshot.id,
   };
 }
@@ -127,7 +129,10 @@ export function itemFromDoc(snapshot: DocSnap): ItemRecord | null {
   };
 }
 
-export function transactionToFirestore(record: TransactionRecord, createdBy: string): DocumentData {
+export function transactionToFirestore(
+  record: TransactionRecord,
+  actor: { uid: string; name: string; email: string },
+): DocumentData {
   const createdAt = toTimestamp(record.timestamp) ?? Timestamp.now();
   const transactionDate = record.transactionDate && isDateKey(record.transactionDate)
     ? record.transactionDate
@@ -140,7 +145,10 @@ export function transactionToFirestore(record: TransactionRecord, createdBy: str
     transactionDate,
     transactionTime: record.transactionTime?.trim() || formatTime(createdAt.toDate().toISOString()),
     createdAt,
-    createdBy,
+    createdBy: actor.uid,
+    createdByName: actor.name,
+    createdByEmail: actor.email,
+    legacyImport: true,
   };
 }
 

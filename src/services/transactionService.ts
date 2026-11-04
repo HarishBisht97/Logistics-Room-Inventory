@@ -6,7 +6,7 @@ import {
   orderBy,
   query,
   runTransaction,
-  Timestamp,
+  serverTimestamp,
   where,
   type Query,
   type Unsubscribe,
@@ -70,11 +70,12 @@ export function watchTransactions(
   end: string,
   onData: (transactions: TransactionRecord[]) => void,
   onError: (message: string) => void,
+  createdBy?: string | null,
 ): Unsubscribe {
   let current = () => {};
   let active = true;
   const listen = (withCreatedAt: boolean) => {
-    current = onSnapshot(transactionQuery(start, end, withCreatedAt), (snapshot) => {
+    current = onSnapshot(transactionQuery(start, end, withCreatedAt, createdBy), (snapshot) => {
       if (!active) return;
       onData(sortNewest(snapshot.docs.flatMap((item) => {
         const record = transactionFromDoc(item);
@@ -114,12 +115,10 @@ async function readTransactions(start: string, end: string): Promise<Transaction
   }
 }
 
-function transactionQuery(start: string, end: string, withCreatedAt: boolean): Query {
-  const constraints = [
-    where('transactionDate', '>=', start),
-    where('transactionDate', '<=', end),
-    orderBy('transactionDate', 'desc'),
-  ];
+function transactionQuery(start: string, end: string, withCreatedAt: boolean, createdBy?: string | null): Query {
+  const constraints = [];
+  if (createdBy) constraints.push(where('createdBy', '==', createdBy));
+  constraints.push(where('transactionDate', '>=', start), where('transactionDate', '<=', end), orderBy('transactionDate', 'desc'));
   if (withCreatedAt) constraints.push(orderBy('createdAt', 'desc'));
   return query(collection(getFirestoreDb(), 'transactions'), ...constraints);
 }
@@ -139,17 +138,18 @@ async function addFirestoreTransaction(input: TransactionDraft, createdBy: strin
   if (!createdBy) throw new Error('Sign in before saving a transaction.');
 
   const timestamp = new Date().toISOString();
-  const createdAt = Timestamp.fromDate(new Date(timestamp));
   const transactionTime = formatTime(timestamp);
   const database = getFirestoreDb();
   const transactionRef = doc(database, 'transactions', input.idempotencyKey);
   const itemRef = doc(database, 'items', itemDocId(barcode));
+  const userRef = doc(database, 'users', createdBy);
 
   try {
     await runTransaction(database, async (transaction) => {
-      const [existing, itemSnap] = await Promise.all([
+      const [existing, itemSnap, userSnap] = await Promise.all([
         transaction.get(transactionRef),
         transaction.get(itemRef),
+        transaction.get(userRef),
       ]);
       if (existing.exists()) {
         const saved = transactionFromDoc(existing);
@@ -159,8 +159,13 @@ async function addFirestoreTransaction(input: TransactionDraft, createdBy: strin
         throw new Error('This save was already recorded. Start again if this is a different transaction.');
       }
 
+      const actor = userSnap.data();
+      if (!actor || actor.status !== 'ACTIVE' || typeof actor.name !== 'string' || typeof actor.email !== 'string') {
+        throw new Error('Your account cannot record transactions.');
+      }
       const item = itemFromDoc(itemSnap);
       assertStatusChange(input.action, item);
+      const recordedAction = input.action === 'TAKING' ? 'ITEM_TAKEN' : 'ITEM_RETURNED';
 
       transaction.set(transactionRef, {
         barcode,
@@ -169,8 +174,10 @@ async function addFirestoreTransaction(input: TransactionDraft, createdBy: strin
         action: input.action,
         transactionDate: input.transactionDate,
         transactionTime,
-        createdAt,
+        createdAt: serverTimestamp(),
         createdBy,
+        createdByName: actor.name,
+        createdByEmail: actor.email,
       });
       transaction.set(itemRef, nextItemState({
         barcode,
@@ -178,8 +185,23 @@ async function addFirestoreTransaction(input: TransactionDraft, createdBy: strin
         reason,
         action: input.action,
         transactionDate: input.transactionDate,
-        createdAt,
       }));
+      transaction.set(doc(collection(database, 'auditLogs')), {
+        userId: createdBy,
+        userName: actor.name,
+        userEmail: actor.email,
+        action: recordedAction,
+        description: input.action === 'TAKING'
+          ? `Recorded a taking transaction for ${barcode}.`
+          : `Recorded a returning transaction for ${barcode}.`,
+        targetId: input.idempotencyKey,
+        timestamp: serverTimestamp(),
+        metadata: {
+          barcode,
+          transactionDate: input.transactionDate,
+          action: input.action,
+        },
+      });
     });
   } catch (error) {
     throw new Error(explainFirestoreError(error));
@@ -205,7 +227,6 @@ function nextItemState(input: {
   reason: string;
   action: TransactionAction;
   transactionDate: string;
-  createdAt: Timestamp;
 }) {
   if (input.action === 'TAKING') {
     return {
@@ -213,8 +234,8 @@ function nextItemState(input: {
       status: 'TAKEN',
       currentHolder: input.name,
       reason: input.reason,
-      takenAt: input.createdAt,
-      lastUpdated: input.createdAt,
+      takenAt: serverTimestamp(),
+      lastUpdated: serverTimestamp(),
       lastTransactionDate: input.transactionDate,
     };
   }
@@ -224,7 +245,7 @@ function nextItemState(input: {
     currentHolder: null,
     reason: null,
     takenAt: null,
-    lastUpdated: input.createdAt,
+    lastUpdated: serverTimestamp(),
     lastTransactionDate: input.transactionDate,
   };
 }

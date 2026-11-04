@@ -30,7 +30,15 @@ In the Firebase console:
 2. Enable Email/Password authentication.
 3. Deploy the rules and index in this repo: `firebase deploy --only firestore`.
 
-`firestore.rules` requires a signed-in user, allows new transactions, and rejects updates or deletes of transaction history. Create staff accounts from the sign-in screen, then turn off public sign-up in Firebase Authentication if the staff list should stay closed.
+`firestore.rules` is the access control. Signing in to Firebase is not enough: the account also needs an active profile in the `users` collection. Deploy rules and indexes after pulling these changes:
+
+```bash
+firebase deploy --only firestore
+```
+
+The first super admin is not chosen in the app. `firestore.rules` names one bootstrap email, `26m0307@iitb.ac.in`. Change that email if it is not the account you use, deploy the rules, then sign in with it. That sign-in creates the protected super admin profile. Nobody else can grant themselves that role.
+
+Details, including what the browser cannot do, are in [docs/access-control.md](docs/access-control.md).
 
 Without the environment variables, the app keeps working on this device and shows that cloud sync is not configured.
 
@@ -42,7 +50,11 @@ Taking an item that is already out, or returning an item that is already in the 
 
 ## Existing records
 
-The first time a signed-in user opens a configured app, it offers to upload IndexedDB records. Upload is confirmed first, uses stable document ids so a refresh does not duplicate them, and leaves the local copies in place.
+A super admin who still has records in IndexedDB on this device is offered a one-time upload. Upload is confirmed first, uses stable document ids so a refresh does not duplicate them, and leaves the local copies in place. Those imported transactions are attributed to the super admin who uploads them.
+
+## Access
+
+Admin, in the navigation, is limited to active admin and super admin profiles. Invitations are stored in Firestore. This app does not send invitation email. The invited person creates a password account with that exact email, then a super admin approves them. Suspending or removing someone blocks Firestore access and keeps their history. It does not delete the Firebase Authentication account.
 
 ## Export
 

@@ -30,6 +30,12 @@ export async function migrateIndexedDbToFirestore(): Promise<{ transactions: num
   assertOnline('Connect to the internet before uploading records from this device.');
   const createdBy = requireUserId();
   const database = getFirestoreDb();
+  const profileSnap = await getDocFromServer(doc(database, 'users', createdBy));
+  const profile = profileSnap.data();
+  if (!profile || profile.role !== 'SUPER_ADMIN' || profile.status !== 'ACTIVE' || typeof profile.name !== 'string' || typeof profile.email !== 'string') {
+    throw new Error('Only a super admin can upload records from this device.');
+  }
+  const actor = { uid: createdBy, name: profile.name, email: profile.email };
   const [transactions, items] = await Promise.all([
     db.transactions.toArray(),
     db.items.toArray(),
@@ -43,7 +49,7 @@ export async function migrateIndexedDbToFirestore(): Promise<{ transactions: num
       if (existing.exists()) continue;
       transactionWrites.push({
         ref: doc(database, 'transactions', id),
-        data: transactionToFirestore(record, createdBy),
+        data: transactionToFirestore(record, actor),
       });
     }
 

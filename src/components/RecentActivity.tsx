@@ -34,6 +34,7 @@ export function RecentActivity({
                   <ActionBadge action={transaction.action} />
                 </div>
                 <p className="mt-1 truncate text-sm text-slate-600">{transaction.name}</p>
+                {transaction.createdByName ? <p className="truncate text-xs text-slate-500">Recorded by {transaction.createdByName}</p> : null}
               </div>
               <time className="shrink-0 text-right text-xs leading-5 text-slate-500" dateTime={transaction.timestamp}>
                 {formatDateKey(transactionDay(transaction))}

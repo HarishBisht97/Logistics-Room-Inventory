@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { useAccess } from '../components/AccessProvider';
 import { BarcodeScanner } from '../components/BarcodeScanner';
 import { PageHeader } from '../components/PageHeader';
 import { useSelectedDate } from '../components/SelectedDateProvider';
@@ -25,6 +26,7 @@ export default function ScanItem() {
   const navigate = useNavigate();
   const toast = useToast();
   const { date, setDate } = useSelectedDate();
+  const access = useAccess();
   const prefill = readState(location.state);
   const [captured, setCaptured] = useState<string | null>(prefill?.barcode ?? null);
   const [locked, setLocked] = useState(Boolean(prefill?.lockBarcode));
@@ -36,6 +38,20 @@ export default function ScanItem() {
   }, [location.key, location.state]);
 
   const showForm = captured !== null;
+  const blocked = access.configured && (
+    !access.featureEnabled('scan')
+    || !access.can('scanItem')
+    || !access.featureEnabled('transactions')
+    || !access.can('recordTransaction')
+  );
+  if (blocked) {
+    return (
+      <PageHeader
+        title="Scan barcode"
+        description="Your account cannot scan or record transactions."
+      />
+    );
+  }
 
   return (
     <div className="mx-auto max-w-lg space-y-5">

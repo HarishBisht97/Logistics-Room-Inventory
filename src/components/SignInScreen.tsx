@@ -38,7 +38,7 @@ export function SignInScreen({ onSignIn, onCreate }: SignInScreenProps) {
           <div>
             <h1 className="text-lg font-semibold text-slate-900">{creating ? 'Create staff account' : 'Sign in'}</h1>
             <p className="mt-1 text-sm leading-6 text-slate-500">
-              Logistics records are shared with signed-in staff through Firestore.
+              Use the email a super admin invited. New accounts stay closed until that invitation is approved.
             </p>
           </div>
           <label className="block text-sm font-medium text-slate-700" htmlFor="staff-email">
@@ -82,7 +82,7 @@ export function SignInScreen({ onSignIn, onCreate }: SignInScreenProps) {
             {creating ? 'Use an existing account' : 'Create staff account'}
           </button>
           <p className="text-xs leading-5 text-slate-500">
-            Create accounts only for logistics staff. After the first accounts exist, public sign-up can be turned off in the Firebase console.
+            Creating an account only creates the Firebase sign-in. It does not grant access unless this email was invited or registration is open.
           </p>
         </form>
       </div>

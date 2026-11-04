@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import App from './App';
+import { AccessProvider } from './components/AccessProvider';
 import { AuthGate } from './components/AuthGate';
 import { SelectedDateProvider } from './components/SelectedDateProvider';
 import { ToastProvider } from './components/ToastProvider';
@@ -12,9 +13,11 @@ createRoot(document.getElementById('root')!).render(
     <ToastProvider>
       <BrowserRouter>
         <AuthGate>
-          <SelectedDateProvider>
-            <App />
-          </SelectedDateProvider>
+          <AccessProvider>
+            <SelectedDateProvider>
+              <App />
+            </SelectedDateProvider>
+          </AccessProvider>
         </AuthGate>
       </BrowserRouter>
     </ToastProvider>

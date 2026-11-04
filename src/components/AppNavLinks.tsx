@@ -1,14 +1,23 @@
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { useAccess } from './AccessProvider';
 import { NAV_ITEMS } from './nav';
 import { focusRing } from './styles';
 
 export function AppNavLinks({ variant }: { variant: 'side' | 'bottom' }) {
   const navigate = useNavigate();
   const location = useLocation();
+  const access = useAccess();
+  const items = NAV_ITEMS.filter((item) => {
+    if (item.to === '/admin') return access.can('adminPanel');
+    if (item.to === '/scan') return access.featureEnabled('scan') && access.can('scanItem');
+    if (item.to === '/taken') return access.featureEnabled('taken') && access.can('viewCurrentlyTaken');
+    if (item.to === '/history') return access.featureEnabled('history') && (access.can('viewAllHistory') || access.can('recordTransaction'));
+    return true;
+  });
 
   return (
     <>
-      {NAV_ITEMS.map((item) => {
+      {items.map((item) => {
         const Icon = item.icon;
         return (
           <NavLink

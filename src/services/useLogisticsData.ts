@@ -5,6 +5,7 @@ import { listTransactionsByDateRange } from '../db/transactionService';
 import { isFirebaseConfigured } from '../firebase/firebase';
 import type { ItemRecord, TransactionRecord } from '../types';
 import { isDateKey } from '../utils/dateUtils';
+import { useAccess } from '../components/AccessProvider';
 import { watchItem, watchTakenItems } from './itemService';
 import { watchTransactions } from './transactionService';
 
@@ -18,6 +19,8 @@ const idleItem = { state: 'idle' as const, item: null };
 
 export function useDateTransactions(start: string, end: string): RecordState<TransactionRecord[]> {
   const cloud = isFirebaseConfigured;
+  const access = useAccess();
+  const owner = cloud && !access.can('viewAllHistory') ? access.uid : null;
   const valid = isDateKey(start) && isDateKey(end) && start <= end;
   const [remote, setRemote] = useState<TransactionRecord[] | undefined>(undefined);
   const [error, setError] = useState('');
@@ -34,8 +37,8 @@ export function useDateTransactions(start: string, end: string): RecordState<Tra
     return watchTransactions(start, end, (rows) => {
       setRemote(rows);
       setError('');
-    }, setError);
-  }, [cloud, start, end, valid]);
+    }, setError, owner);
+  }, [cloud, start, end, valid, owner]);
 
   const local = useLiveQuery(async () => {
     if (cloud) return undefined;

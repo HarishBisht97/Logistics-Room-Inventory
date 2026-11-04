@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { ScrollText } from 'lucide-react';
 import { ActionBadge } from '../components/ActionBadge';
+import { useAccess } from '../components/AccessProvider';
 import { useAuth } from '../components/AuthGate';
 import { DataTools } from '../components/DataTools';
 import { DateNavigator, shiftRange } from '../components/DateNavigator';
@@ -24,6 +25,7 @@ const FILTERS: { id: ActionFilter; label: string }[] = [
 export default function TransactionHistory() {
   const { date } = useSelectedDate();
   const { configured } = useAuth();
+  const access = useAccess();
   const [query, setQuery] = useState('');
   const [action, setAction] = useState<ActionFilter>('ALL');
   const [from, setFrom] = useState(date);
@@ -38,11 +40,15 @@ export default function TransactionHistory() {
       if (action !== 'ALL' && transaction.action !== action) return false;
       if (!needle) return true;
       return transaction.barcode.toLowerCase().includes(needle)
-        || transaction.name.toLowerCase().includes(needle);
+        || transaction.name.toLowerCase().includes(needle)
+        || (transaction.createdByName ?? '').toLowerCase().includes(needle);
     });
   }, [records.data, query, action, rangeError]);
 
   const filtersActive = query.trim() !== '' || action !== 'ALL' || from !== todayKey() || to !== todayKey();
+  if (access.configured && !access.featureEnabled('history')) {
+    return <PageHeader title="Transaction history" description="History is turned off for your account." />;
+  }
 
   return (
     <div className="space-y-5">
@@ -179,6 +185,7 @@ function HistoryTable({ transactions }: { transactions: TransactionRecord[] }) {
               <th className="px-4 py-3 font-medium">Action</th>
               <th className="px-4 py-3 font-medium">Transaction date</th>
               <th className="px-4 py-3 font-medium">Time</th>
+              <th className="px-4 py-3 font-medium">Recorded by</th>
             </tr>
           </thead>
           <tbody>
@@ -190,6 +197,7 @@ function HistoryTable({ transactions }: { transactions: TransactionRecord[] }) {
                 <td className="px-4 py-3"><ActionBadge action={transaction.action} /></td>
                 <td className="px-4 py-3 whitespace-nowrap text-slate-700">{formatDateKey(transactionDay(transaction))}</td>
                 <td className="px-4 py-3 whitespace-nowrap text-slate-700">{transactionClock(transaction)}</td>
+                <td className="px-4 py-3 text-slate-700">{transaction.createdByName || '—'}</td>
               </tr>
             ))}
           </tbody>
@@ -212,6 +220,7 @@ function HistoryCards({ transactions }: { transactions: TransactionRecord[] }) {
           <p className="mt-1 text-sm text-slate-700">{transaction.reason}</p>
           <p className="mt-2 text-xs text-slate-500">
             {formatDateKey(transactionDay(transaction))} · {transactionClock(transaction)}
+            {transaction.createdByName ? ` · Recorded by ${transaction.createdByName}` : ''}
           </p>
         </li>
       ))}

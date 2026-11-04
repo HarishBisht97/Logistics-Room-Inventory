@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { PackageCheck, ScanBarcode } from 'lucide-react';
+import { useAccess } from '../components/AccessProvider';
 import { EmptyState, LoadingState } from '../components/EmptyState';
 import { PageHeader } from '../components/PageHeader';
 import { SearchField } from '../components/SearchField';
@@ -11,6 +12,7 @@ import type { ItemRecord } from '../types';
 
 export default function CurrentlyTaken() {
   const navigate = useNavigate();
+  const access = useAccess();
   const { data, loading, error } = useTakenItems();
   const items = data;
   const [query, setQuery] = useState('');
@@ -41,6 +43,13 @@ export default function CurrentlyTaken() {
     });
   }
 
+  const canRecord = !access.configured || (
+    access.featureEnabled('scan') && access.can('scanItem') && access.featureEnabled('transactions') && access.can('recordTransaction')
+  );
+  if (access.configured && (!access.featureEnabled('taken') || !access.can('viewCurrentlyTaken'))) {
+    return <PageHeader title="Currently taken items" description="Your account cannot view this list." />;
+  }
+
   const total = items?.length ?? 0;
   const description = items === undefined
     ? 'The latest status of every item, independent of the selected date.'
@@ -66,12 +75,12 @@ export default function CurrentlyTaken() {
           icon={PackageCheck}
           title="All items are back"
           description="Nothing is checked out of the logistics room right now."
-          action={
+          action={canRecord ? (
             <Link to="/scan" className={`inline-flex min-h-12 items-center gap-2 rounded-xl bg-orange-600 px-4 text-sm font-semibold text-white ${focusRing}`}>
               <ScanBarcode size={18} />
               Scan barcode
             </Link>
-          }
+          ) : undefined}
         />
       ) : null}
       {items && items.length > 0 && filtered.length === 0 ? (
@@ -84,7 +93,7 @@ export default function CurrentlyTaken() {
       {filtered.length > 0 ? (
         <div className="grid gap-3 md:grid-cols-2">
           {filtered.map((item) => (
-            <TakenItemCard key={item.barcode} item={item} onReturn={returnItem} />
+            <TakenItemCard key={item.barcode} item={item} onReturn={canRecord ? returnItem : undefined} />
           ))}
         </div>
       ) : null}
