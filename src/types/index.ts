@@ -62,3 +62,17 @@ export interface BackupFile {
   transactions: TransactionRecord[];
   items: ItemRecord[];
 }
+
+export type UserRole = 'ADMIN' | 'USER';
+
+export type AccountStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
+
+export interface UserProfile {
+  uid: string;
+  name: string;
+  email: string;
+  role: UserRole;
+  status: AccountStatus;
+  createdAt: string | null;
+  updatedAt: string | null;
+}

@@ -6,11 +6,12 @@ import { darkButton, secondaryButton, textInput } from './styles';
 
 interface SignInScreenProps {
   onSignIn: (email: string, password: string) => Promise<void>;
-  onCreate: (email: string, password: string) => Promise<void>;
+  onCreate: (email: string, password: string, name: string) => Promise<void>;
 }
 
 export function SignInScreen({ onSignIn, onCreate }: SignInScreenProps) {
   const [creating, setCreating] = useState(false);
+  const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -21,8 +22,13 @@ export function SignInScreen({ onSignIn, onCreate }: SignInScreenProps) {
     if (busy) return;
     setBusy(true);
     setError('');
+    if (creating && name.trim().length === 0) {
+      setError('Enter your name.');
+      setBusy(false);
+      return;
+    }
     try {
-      if (creating) await onCreate(email.trim(), password);
+      if (creating) await onCreate(email.trim(), password, name.trim());
       else await onSignIn(email.trim(), password);
     } catch (caught) {
       setError(authMessage(caught));
@@ -38,9 +44,24 @@ export function SignInScreen({ onSignIn, onCreate }: SignInScreenProps) {
           <div>
             <h1 className="text-lg font-semibold text-slate-900">{creating ? 'Create staff account' : 'Sign in'}</h1>
             <p className="mt-1 text-sm leading-6 text-slate-500">
-              Logistics records are shared with signed-in staff through Firestore.
+              Logistics records are shared with approved staff through Firestore.
             </p>
           </div>
+          {creating ? (
+            <label className="block text-sm font-medium text-slate-700" htmlFor="staff-name">
+              Name
+              <input
+                id="staff-name"
+                type="text"
+                autoComplete="name"
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                required
+                maxLength={80}
+                className={`${textInput} mt-1.5`}
+              />
+            </label>
+          ) : null}
           <label className="block text-sm font-medium text-slate-700" htmlFor="staff-email">
             Email
             <input
@@ -82,7 +103,7 @@ export function SignInScreen({ onSignIn, onCreate }: SignInScreenProps) {
             {creating ? 'Use an existing account' : 'Create staff account'}
           </button>
           <p className="text-xs leading-5 text-slate-500">
-            Create accounts only for logistics staff. After the first accounts exist, public sign-up can be turned off in the Firebase console.
+            New accounts stay pending until an administrator approves them. The first administrator is assigned in the Firebase console.
           </p>
         </form>
       </div>

@@ -1,8 +1,45 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    // The first admin is created in the Firebase console by setting
+    // users/{uid}.role to ADMIN and users/{uid}.status to APPROVED.
+    // Clients cannot grant themselves admin access or approval.
+
     function signedIn() {
       return request.auth != null;
+    }
+
+    function userPath(accountId) {
+      return /databases/$(database)/documents/users/$(accountId);
+    }
+
+    function hasAccount() {
+      return signedIn() && exists(userPath(request.auth.uid));
+    }
+
+    function account() {
+      return get(userPath(request.auth.uid)).data;
+    }
+
+    function isApproved() {
+      return hasAccount() && account().status == 'APPROVED';
+    }
+
+    function isAdmin() {
+      return isApproved() && account().role == 'ADMIN';
+    }
+
+    function userKeys() {
+      return request.resource.data.keys().hasOnly([
+        'uid', 'name', 'email', 'role', 'status', 'createdAt', 'updatedAt'
+      ]);
+    }
+
+    function sameIdentity() {
+      return request.resource.data.uid == resource.data.uid
+        && request.resource.data.name == resource.data.name
+        && request.resource.data.email == resource.data.email
+        && request.resource.data.createdAt == resource.data.createdAt;
     }
 
     function validTransaction() {
@@ -51,15 +88,54 @@ service cloud.firestore {
         );
     }
 
+    match /users/{userId} {
+      allow read: if signedIn() && (request.auth.uid == userId || isAdmin());
+
+      allow create: if signedIn()
+        && request.auth.uid == userId
+        && userKeys()
+        && request.resource.data.uid == userId
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.name.size() <= 80
+        && request.resource.data.email is string
+        && request.resource.data.email.size() > 0
+        && request.resource.data.email.size() <= 200
+        && (request.auth.token.email == null || request.resource.data.email == request.auth.token.email)
+        && request.resource.data.role == 'USER'
+        && request.resource.data.status == 'PENDING'
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time;
+
+      allow update: if isAdmin()
+        && request.auth.uid != userId
+        && userKeys()
+        && sameIdentity()
+        && request.resource.data.updatedAt == request.time
+        && (
+          (resource.data.status == 'PENDING'
+            && resource.data.role == 'USER'
+            && request.resource.data.role == 'USER'
+            && request.resource.data.status in ['APPROVED', 'REJECTED'])
+          ||
+          (resource.data.status == 'APPROVED'
+            && request.resource.data.status == 'APPROVED'
+            && request.resource.data.role in ['ADMIN', 'USER']
+            && request.resource.data.role != resource.data.role)
+        );
+
+      allow delete: if false;
+    }
+
     match /transactions/{id} {
-      allow read: if signedIn();
-      allow create: if signedIn() && validTransaction();
+      allow read: if isApproved();
+      allow create: if isApproved() && validTransaction();
       allow update, delete: if false;
     }
 
     match /items/{id} {
-      allow read: if signedIn();
-      allow create, update: if signedIn() && validItem();
+      allow read: if isApproved();
+      allow create, update: if isApproved() && validItem();
       allow delete: if false;
     }
   }

@@ -29,8 +29,24 @@ In the Firebase console:
 1. Create a Firestore database.
 2. Enable Email/Password authentication.
 3. Deploy the rules and index in this repo: `firebase deploy --only firestore`.
+4. Sign in once as the first administrator, then set that user's document as described below.
 
-`firestore.rules` requires a signed-in user, allows new transactions, and rejects updates or deletes of transaction history. Create staff accounts from the sign-in screen, then turn off public sign-up in Firebase Authentication if the staff list should stay closed.
+## Staff approval
+
+New accounts are regular users with status `PENDING`. They stay on a waiting screen until an administrator approves them. Approved accounts use role `USER` until an administrator promotes them. Rejected accounts cannot open the logbook. Signing in again does not create a second profile.
+
+The app never makes the first person an administrator. After the rules are deployed, create that admin in the Firebase console:
+
+1. Sign in once with the administrator's email so the app creates `users/{uid}`. The waiting screen shows that Account ID.
+2. Open that document in Firestore. The document id is the Account ID.
+3. Set `status` to `APPROVED` and `role` to `ADMIN`. Leave `uid`, `name`, `email`, `createdAt`, and `updatedAt` as they are.
+4. The waiting screen unlocks when the document is saved. That person can then approve other staff from Manage Users, and can grant or remove admin access.
+
+Every admin has the same authority. Nobody can change their own role or approval status. Those checks are in `firestore.rules`. Hiding a button is not the only protection.
+
+Deploy the rules and this version of the app together. People who already have Firebase accounts become pending the next time they sign in, until an administrator approves them. Logistics records stay closed to anyone who is not approved.
+
+`firestore.rules` allows approved users to read logistics records and add transactions. Transaction history still cannot be edited or deleted.
 
 Without the environment variables, the app keeps working on this device and shows that cloud sync is not configured.
 

@@ -4,6 +4,7 @@ import { AppLayout } from './components/AppLayout';
 import { LoadingState } from './components/EmptyState';
 import CurrentlyTaken from './pages/CurrentlyTaken';
 import Dashboard from './pages/Dashboard';
+import ManageUsers from './pages/ManageUsers';
 import TransactionHistory from './pages/TransactionHistory';
 
 const ScanItem = lazy(() => import('./pages/ScanItem'));
@@ -23,6 +24,7 @@ export default function App() {
         />
         <Route path="taken" element={<CurrentlyTaken />} />
         <Route path="history" element={<TransactionHistory />} />
+        <Route path="users" element={<ManageUsers />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>
