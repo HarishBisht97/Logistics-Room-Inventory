@@ -39,6 +39,15 @@ export function TransactionForm({
   const [submitting, setSubmitting] = useState(false);
   const inFlight = useRef(false);
 
+  function clearFieldError(field: keyof FieldErrors) {
+    setErrors((current) => {
+      if (!current[field]) return current;
+      const next = { ...current };
+      delete next[field];
+      return next;
+    });
+  }
+
   const lookup = useLiveQuery<Lookup, Lookup>(async () => {
     const key = barcode.trim();
     if (!key) return { state: 'idle' };

@@ -28,6 +28,7 @@ try {
   await page.getByRole('link', { name: 'SCAN BARCODE' }).click();
   await page.getByRole('heading', { name: 'Scan barcode' }).waitFor();
   await page.getByLabel('Barcode / Item ID').waitFor();
+  await page.getByText('Starting camera').waitFor({ state: 'hidden', timeout: 8000 }).catch(() => {});
   await page.screenshot({ path: `${shots}/02-scanner-mobile.png`, fullPage: true });
 
   await page.getByRole('button', { name: 'Continue' }).click();
@@ -50,13 +51,14 @@ try {
   await page.getByLabel('Reason').fill('Lab Work');
   await page.locator('#action').selectOption('TAKING');
   const save = page.getByRole('button', { name: 'Save transaction' });
-  await save.scrollIntoViewIfNeeded();
-  const saveBox = await save.boundingBox();
-  const nav = page.locator('nav[aria-label="Primary"]:visible');
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  const cancel = page.getByRole('button', { name: 'Cancel' });
+  const cancelBox = await cancel.boundingBox();
+  const nav = page.locator('nav[aria-label="Primary"]').locator('visible=true');
   const navBox = await nav.boundingBox();
-  if (!saveBox || !navBox) throw new Error('missing save button or navigation box');
-  if (saveBox.y + saveBox.height > navBox.y + 1) {
-    throw new Error(`Save button is covered by the bottom nav (${saveBox.y + saveBox.height} > ${navBox.y})`);
+  if (!cancelBox || !navBox) throw new Error('missing cancel button or navigation box');
+  if (cancelBox.y + cancelBox.height > navBox.y + 1) {
+    throw new Error(`Cancel button is covered by the bottom nav (${cancelBox.y + cancelBox.height} > ${navBox.y})`);
   }
   await page.screenshot({ path: `${shots}/04-form-mobile.png`, fullPage: true });
   await save.click();
