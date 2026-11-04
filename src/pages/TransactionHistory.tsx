@@ -136,7 +136,7 @@ export default function TransactionHistory() {
         ) : null}
       </section>
 
-      <DataTools date={from} start={from} end={to} showBackup={false} />
+      <DataTools date={from} start={from} end={to} />
 
       {records.loading ? <LoadingState label="Loading history" /> : null}
       {records.data && records.data.length === 0 ? (

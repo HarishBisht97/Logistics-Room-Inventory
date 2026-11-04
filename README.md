@@ -44,6 +44,6 @@ Taking an item that is already out, or returning an item that is already in the 
 
 The first time a signed-in user opens a configured app, it offers to upload IndexedDB records. Upload is confirmed first, uses stable document ids so a refresh does not duplicate them, and leaves the local copies in place.
 
-## Backup
+## Export
 
-Excel export can download one date, a date range, every transaction, or the items that are currently out. JSON backup downloads the current records. Restore asks before writing. On Firestore, restore adds missing transactions and does not delete history.
+Excel export can download one date, a date range, every transaction, or the items that are currently out.

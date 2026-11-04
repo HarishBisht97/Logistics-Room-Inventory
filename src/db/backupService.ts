@@ -1,9 +1,7 @@
 import { db } from './database';
 import type { BackupFile, ItemRecord, TransactionAction, TransactionRecord } from '../types';
-import { downloadBlob } from '../utils/download';
 import { formatTime, isDateKey, toDateKey } from '../utils/dateUtils';
 
-const BACKUP_NAME = 'Logistics_Inventory_Backup.json';
 const ACTIONS = new Set<TransactionAction>(['TAKING', 'RETURNING']);
 
 export async function getDataCounts(): Promise<{ transactions: number; items: number }> {
@@ -12,25 +10,6 @@ export async function getDataCounts(): Promise<{ transactions: number; items: nu
     db.items.count(),
   ]);
   return { transactions, items };
-}
-
-export async function downloadJsonBackup(): Promise<void> {
-  const [transactions, items] = await Promise.all([
-    db.transactions.toArray(),
-    db.items.toArray(),
-  ]);
-  saveBackupFile({
-    app: 'logistics-inventory',
-    version: 2,
-    exportedAt: new Date().toISOString(),
-    transactions,
-    items,
-  });
-}
-
-export function saveBackupFile(backup: BackupFile): void {
-  const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
-  downloadBlob(blob, BACKUP_NAME);
 }
 
 export function parseBackup(value: unknown): BackupFile {
