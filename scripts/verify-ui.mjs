@@ -50,6 +50,9 @@ try {
   await page.getByLabel('Name').fill('Rahul');
   await page.getByLabel('Reason').fill('Lab Work');
   await page.locator('#action').selectOption('TAKING');
+  await page.getByText("Enter the person's name.").waitFor({ state: 'hidden' });
+  await page.getByText('Enter a reason.').waitFor({ state: 'hidden' });
+  await page.getByText('Select Taking or Submitting Back.').waitFor({ state: 'hidden' });
   const save = page.getByRole('button', { name: 'Save transaction' });
   await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
   const cancel = page.getByRole('button', { name: 'Cancel' });
@@ -75,7 +78,7 @@ try {
   await page.getByRole('link', { name: 'Taken' }).click();
   await page.getByRole('heading', { name: 'Currently taken items' }).waitFor();
   await page.getByText('Lab Work').waitFor();
-  await page.getByText('Taken', { exact: true }).waitFor();
+  await page.getByRole('article').getByText('Taken', { exact: true }).waitFor();
   await page.screenshot({ path: `${shots}/06-taken-mobile.png`, fullPage: true });
   await page.getByRole('button', { name: 'Submit back' }).click();
 
@@ -90,7 +93,7 @@ try {
   await page.getByText('All items are back').waitFor();
   await page.screenshot({ path: `${shots}/07-taken-empty.png`, fullPage: true });
 
-  await page.getByRole('link', { name: 'Scan' }).click();
+  await page.getByRole('link', { name: 'Scan', exact: true }).click();
   await page.getByLabel('Barcode / Item ID').fill('890123457');
   await page.getByRole('button', { name: 'Continue' }).click();
   await page.getByLabel('Name').fill('Amit');
@@ -99,7 +102,7 @@ try {
   await page.getByRole('button', { name: 'Save transaction' }).click();
   await page.getByRole('heading', { name: 'Dashboard' }).waitFor();
 
-  await page.getByRole('link', { name: 'Scan' }).click();
+  await page.getByRole('link', { name: 'Scan', exact: true }).click();
   await page.getByLabel('Barcode / Item ID').fill('890123457');
   await page.getByRole('button', { name: 'Continue' }).click();
   await page.getByLabel('Name').fill('Amit');
@@ -116,11 +119,11 @@ try {
   await page.getByText('2 transactions').waitFor();
   await page.getByRole('button', { name: 'Submitting Back', exact: true }).click();
   await page.getByText('1 transaction').waitFor();
-  await page.getByText('Finished').waitFor();
+  await page.locator('ul').getByText('Finished').waitFor();
   await page.getByRole('button', { name: 'All', exact: true }).click();
   await page.getByPlaceholder('Search by barcode or name').fill('amit');
   await page.getByText('1 transaction').waitFor();
-  await page.getByText('Event Setup').waitFor();
+  await page.locator('ul').getByText('Event Setup').waitFor();
   await page.getByRole('button', { name: 'Clear filters' }).click();
   await page.getByText('3 transactions').waitFor();
 
@@ -143,6 +146,7 @@ try {
   if (String(taken.getRow(2).getCell(6).value) !== 'Taken') throw new Error('taken status missing');
 
   const backupPath = `${shots}/backup.json`;
+  await page.getByRole('link', { name: 'Dashboard' }).click();
   const backup = await download(page, page.getByRole('button', { name: 'JSON backup' }), backupPath);
   await page.getByRole('link', { name: 'Dashboard' }).click();
   await page.getByRole('link', { name: 'SCAN BARCODE' }).click();
@@ -175,8 +179,9 @@ try {
   await page.getByRole('link', { name: 'History' }).click();
   await page.locator('table').waitFor();
   await page.screenshot({ path: `${shots}/11-history-desktop.png`, fullPage: true });
-  await page.getByRole('link', { name: 'Taken' }).click();
-  await page.getByText('Event Setup').waitFor();
+  await page.getByRole('link', { name: 'Taken', exact: true }).click();
+  await page.getByRole('heading', { name: 'Currently taken items' }).waitFor();
+  await page.getByRole('article').getByText('Event Setup').waitFor();
   await page.screenshot({ path: `${shots}/12-taken-desktop.png`, fullPage: true });
 
   if (pageErrors.length > 0) throw new Error(`page errors:\n${pageErrors.join('\n')}`);

@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from 'react';
 import { CircleCheck, CircleExclamationPoint } from 'lucide-react';
 
 type ToastTone = 'success' | 'error';
@@ -18,13 +18,15 @@ const ToastContext = createContext<ToastApi | null>(null);
 
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
+  const timer = useRef<number | null>(null);
 
   const push = useCallback((tone: ToastTone, message: string) => {
     const id = Date.now() + Math.random();
-    setToasts((current) => [...current.slice(-2), { id, tone, message }]);
-    window.setTimeout(() => {
+    setToasts([{ id, tone, message }]);
+    if (timer.current !== null) window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => {
       setToasts((current) => current.filter((toast) => toast.id !== id));
-    }, 3800);
+    }, 3200);
   }, []);
 
   const api = useMemo<ToastApi>(() => ({
@@ -35,7 +37,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={api}>
       {children}
-      <div className="pointer-events-none fixed inset-x-0 top-[4.5rem] z-[70] flex flex-col items-center gap-2 px-4 md:top-4">
+      <div className="pointer-events-none fixed inset-x-0 bottom-[calc(5.25rem+env(safe-area-inset-bottom))] z-[70] flex flex-col items-center gap-2 px-4 md:bottom-6">
         {toasts.map((toast) => (
           <div
             key={toast.id}
