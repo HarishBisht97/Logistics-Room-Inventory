@@ -54,7 +54,7 @@ try {
   await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
   const cancel = page.getByRole('button', { name: 'Cancel' });
   const cancelBox = await cancel.boundingBox();
-  const nav = page.locator('nav[aria-label="Primary"]').locator('visible=true');
+  const nav = page.getByRole('navigation', { name: 'Primary' });
   const navBox = await nav.boundingBox();
   if (!cancelBox || !navBox) throw new Error('missing cancel button or navigation box');
   if (cancelBox.y + cancelBox.height > navBox.y + 1) {
