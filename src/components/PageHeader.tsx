@@ -9,7 +9,7 @@ interface PageHeaderProps {
 
 export function PageHeader({ title, description, action, className = '' }: PageHeaderProps) {
   useEffect(() => {
-    document.title = `${title} · Logistics Room`;
+    document.title = `${title} · IPT Logbook`;
   }, [title]);
 
   return (

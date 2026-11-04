@@ -1,4 +1,4 @@
-# IIT Bombay Logistics Management System
+# IPT Logbook
 
 A mobile-first app for recording items taken from and returned to the logistics room. The interface is React, TypeScript, and Vite. When Firebase is configured, Cloud Firestore is the shared database. Until then, records stay in IndexedDB on the device.
 

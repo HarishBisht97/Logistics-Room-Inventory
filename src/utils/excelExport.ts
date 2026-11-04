@@ -50,7 +50,7 @@ export async function buildInventoryWorkbook(
   const includeTaken = sheets.taken !== false;
   const { Workbook } = await import('exceljs');
   const workbook = new Workbook();
-  workbook.creator = 'IIT Bombay Logistics Management System';
+  workbook.creator = 'IPT Logbook';
   workbook.created = new Date();
 
   if (includeHistory) {

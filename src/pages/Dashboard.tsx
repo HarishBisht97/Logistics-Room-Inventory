@@ -26,22 +26,14 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-5">
-      <div className="flex items-center gap-4">
-        <img
-          src="/icons/iitb.svg"
-          alt="Indian Institute of Technology Bombay"
-          className="h-16 w-auto shrink-0 sm:h-20"
-        />
-        <PageHeader
-          className="min-w-0 flex-1"
-          title="Dashboard"
-          description={
-            configured
-              ? `Records for ${formatLongDate(date)} from Firestore.`
-              : `Records for ${formatLongDate(date)} saved on this device.`
-          }
-        />
-      </div>
+      <PageHeader
+        title="Dashboard"
+        description={
+          configured
+            ? `Records for ${formatLongDate(date)} from Firestore.`
+            : `Records for ${formatLongDate(date)} saved on this device.`
+        }
+      />
       <DateNavigator date={date} onChange={setDate} />
       {error ? <p className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">{error}</p> : null}
       <DashboardStats stats={stats} loading={loading} />

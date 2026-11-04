@@ -11,9 +11,9 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/iitb.svg'],
       manifest: {
-        name: 'IIT Bombay Logistics Management System',
-        short_name: 'IITB Logistics',
-        description: 'Track items taken from and returned to the IIT Bombay logistics room.',
+        name: 'IPT Logbook',
+        short_name: 'IPT Logbook',
+        description: 'Track items taken from and returned to the logistics room.',
         theme_color: '#0f172a',
         background_color: '#f8fafc',
         display: 'standalone',

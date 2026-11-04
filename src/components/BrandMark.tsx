@@ -11,7 +11,7 @@ export function BrandMark({ compact = false }: BrandMarkProps) {
         className={compact ? 'h-9 w-auto shrink-0' : 'h-14 w-auto shrink-0'}
       />
       <p className={compact ? 'text-sm leading-tight font-semibold text-slate-900' : 'text-sm leading-snug font-semibold text-slate-900'}>
-        IIT Bombay Logistics Management System
+        IPT Logbook
       </p>
     </div>
   );
